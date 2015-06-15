@@ -18,6 +18,9 @@ type Provisioner interface {
 	// Create the files for the daemon to consume configuration settings (return struct of content and path)
 	GenerateDockerOptions(dockerPort int) (*DockerOptions, error)
 
+	// Create Kubernetes Manifest file (return struct of content and path)
+	Generatek8sOptions() (*k8sOptions, error)
+
 	// Get the directory where the settings files for docker are to be found
 	GetDockerOptionsDir() string
 

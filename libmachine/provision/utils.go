@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"crypto/rand"
 
 	"github.com/docker/machine/libmachine/auth"
 	"github.com/docker/machine/libmachine/provision/pkgaction"
@@ -20,9 +21,23 @@ type DockerOptions struct {
 	EngineOptionsPath string
 }
 
+type k8sOptions struct {
+	k8sOptions        string
+	k8sOptionsPath    string
+}
+
+func randToken() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
 func installDockerGeneric(p Provisioner, baseURL string) error {
 	// install docker - until cloudinit we use ubuntu everywhere so we
 	// just install it using the docker repos
+	if output, err := p.SSHCommand(fmt.Sprintf("sudo apt-get -y install linux-image-extra-$(uname -r)")); err != nil {
+		return fmt.Errorf("error installing aufs image: %s\n", output)
+	}
 	if output, err := p.SSHCommand(fmt.Sprintf("if ! type docker; then curl -sSL %s | sh -; fi", baseURL)); err != nil {
 		return fmt.Errorf("error installing docker: %s\n", output)
 	}
@@ -175,6 +190,42 @@ func ConfigureAuth(p Provisioner) error {
 	// TODO: Do not hardcode daemon port, ask the driver
 	if err := utils.WaitForDocker(ip, dockerPort); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func installk8sGeneric(p Provisioner) error {
+	// install Kubernetes in a single node using Docker containers
+	//if output, err := p.SSHCommand("docker pull kubernetes/etcd"); err != nil {
+	//	return fmt.Errorf("error installing k8s: %s\n", output)
+	//}
+
+	k8scfg, err := p.Generatek8sOptions()
+	if err != nil {
+			return err
+	}
+
+	if _, err = p.SSHCommand(fmt.Sprintf("printf '%s' | sudo tee %s", k8scfg.k8sOptions, k8scfg.k8sOptionsPath)); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s\" | sudo tee %s", "abcdefghijkl,machine,1000", "/tmp/tokenfile.txt")); err != nil {
+		return err
+	}
+
+	log.Debug("launching etcd")
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name etcd kubernetes/etcd:2.0.5.1 /usr/local/bin/etcd --addr=127.0.0.1:4001 --bind-addr=0.0.0.0:4001 --data-dir=/var/etcd/data")); err != nil {
+		return fmt.Errorf("error installing etcd")
+	}
+	log.Debug("launching master")
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /tmp/tokenfile.txt:/tmp/tokenfile.txt gcr.io/google_containers/hyperkube:v0.17.0 /hyperkube kubelet --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests")); err != nil {
+		return fmt.Errorf("error installing master")
+
+	}
+	log.Debug("launching proxy")
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --privileged=true --restart=always --name proxy gcr.io/google_containers/hyperkube:v0.17.0 /hyperkube proxy --master=http://127.0.0.1:8080 --v=2")); err != nil {
+		return fmt.Errorf("error installing proxy")
 	}
 
 	return nil

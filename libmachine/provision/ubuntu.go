@@ -23,6 +23,7 @@ func NewUbuntuProvisioner(d drivers.Driver) Provisioner {
 		GenericProvisioner{
 			DockerOptionsDir:  "/etc/docker",
 			DaemonOptionsFile: "/etc/default/docker",
+			KubernetesManifestFile: "/tmp/master.json",
 			OsReleaseId:       "ubuntu",
 			Packages: []string{
 				"curl",
@@ -122,6 +123,10 @@ func (provisioner *UbuntuProvisioner) Provision(swarmOptions swarm.SwarmOptions,
 	}
 
 	if err := makeDockerOptionsDir(provisioner); err != nil {
+		return err
+	}
+
+	if err := installk8sGeneric(provisioner); err != nil {
 		return err
 	}
 

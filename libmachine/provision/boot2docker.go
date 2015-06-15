@@ -124,6 +124,35 @@ func (provisioner *Boot2DockerProvisioner) GetAuthOptions() auth.AuthOptions {
 	return provisioner.AuthOptions
 }
 
+func (provisioner *Boot2DockerProvisioner) Generatek8sOptions() (*k8sOptions, error) {
+	var (
+		k8sCfg bytes.Buffer
+	)
+	
+	k8sConfigTmpl := `
+{
+"apiVersion": "v1beta3"
+}
+`
+	t, err := template.New("k8sConfig").Parse(k8sConfigTmpl)
+	if err != nil {
+		return nil, err
+	}
+
+	k8sContext := EngineConfigContext{
+		DockerPort:    1234,
+		AuthOptions:   provisioner.AuthOptions,
+		EngineOptions: provisioner.EngineOptions,
+	}
+
+	t.Execute(&k8sCfg, k8sContext)
+
+	return &k8sOptions{
+		k8sOptions:     k8sCfg.String(),
+		k8sOptionsPath: "/etc/foobar",
+	}, nil
+}
+
 func (provisioner *Boot2DockerProvisioner) GenerateDockerOptions(dockerPort int) (*DockerOptions, error) {
 	var (
 		engineCfg bytes.Buffer

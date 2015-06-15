@@ -15,6 +15,7 @@ type GenericProvisioner struct {
 	OsReleaseId       string
 	DockerOptionsDir  string
 	DaemonOptionsFile string
+	KubernetesManifestFile string
 	Packages          []string
 	OsReleaseInfo     *OsRelease
 	Driver            drivers.Driver
@@ -66,6 +67,89 @@ func (provisioner *GenericProvisioner) GetAuthOptions() auth.AuthOptions {
 
 func (provisioner *GenericProvisioner) SetOsReleaseInfo(info *OsRelease) {
 	provisioner.OsReleaseInfo = info
+}
+
+func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error) {
+	var (
+		k8sCfg bytes.Buffer
+	)
+	
+	k8sConfigTmpl := `
+{
+"apiVersion": "v1beta3",
+"kind": "Pod",
+"metadata": {"name":"kubernetes"},
+"spec":{
+  "hostNetwork": true,
+  "containers":[
+    {
+      "name": "controller-manager",
+      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "command": [
+              "/hyperkube",
+              "controller-manager",
+              "--master=127.0.0.1:8080",
+              "--machines=127.0.0.1",
+              "--sync_nodes=true",
+              "--v=2"
+        ]
+    },
+    {
+      "name": "apiserver",
+      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "volumeMounts": [ 
+         {"name": "token-volume",
+          "mountPath": "/tmp/tokenfile.txt",
+          "readOnly": true } 
+          ],
+      "command": [
+              "/hyperkube",
+              "apiserver",
+              "--token-auth-file=/tmp/tokenfile.txt",
+              "--portal_net=10.0.0.1/24",
+              "--address=0.0.0.0",
+              "--etcd_servers=http://127.0.0.1:4001",
+              "--cluster_name=kmachine",
+              "--v=2"
+        ]
+    },
+    {
+      "name": "scheduler",
+      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "command": [
+              "/hyperkube",
+              "scheduler",
+              "--master=127.0.0.1:8080",
+              "--v=2"
+        ]
+    }
+  ],
+  "volumes":[
+    { "name": "token-volume",
+      "hostPath": {
+        "path": "/tmp/tokenfile.txt"}
+    }
+ ]
+ }
+}
+`
+	t, err := template.New("k8sConfig").Parse(k8sConfigTmpl)
+	if err != nil {
+		return nil, err
+	}
+
+	k8sContext := EngineConfigContext{
+		DockerPort:    1234,
+		AuthOptions:   provisioner.AuthOptions,
+		EngineOptions: provisioner.EngineOptions,
+	}
+
+	t.Execute(&k8sCfg, k8sContext)
+
+	return &k8sOptions{
+		k8sOptions:     k8sCfg.String(),
+		k8sOptionsPath: provisioner.KubernetesManifestFile,
+	}, nil
 }
 
 func (provisioner *GenericProvisioner) GenerateDockerOptions(dockerPort int) (*DockerOptions, error) {

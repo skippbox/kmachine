@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	envTmpl = `{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ .UsageHint }}`
+	envTmpl = `kubectl config set-cluster kmachine --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials kuser --token=abcdefghijkl{{ .Suffix2 }}kubectl config set-context kmachine --user=kuser --cluster=kmachine{{ .Suffix2 }}kubectl config use-context kmachine{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ .UsageHint }}`
 )
 
 var (
@@ -26,8 +26,10 @@ type ShellConfig struct {
 	Prefix          string
 	Delimiter       string
 	Suffix          string
+	Suffix2			string
 	DockerCertPath  string
 	DockerHost      string
+	K8sHost			string
 	DockerTLSVerify string
 	UsageHint       string
 	MachineName     string
@@ -103,6 +105,14 @@ func cmdEnv(c *cli.Context) {
 	}
 
 	dockerHost := cfg.machineUrl
+	mUrl, err := url.Parse(cfg.machineUrl)
+	if err != nil {
+		log.Fatal(err)
+	}
+	mParts := strings.Split(mUrl.Host, ":")
+	k8sHost := fmt.Sprintf("https://%s:6443",mParts[0])
+
+
 	if c.Bool("swarm") {
 		if !cfg.SwarmOptions.Master {
 			log.Fatalf("%s is not a swarm master", cfg.machineName)
@@ -154,6 +164,7 @@ func cmdEnv(c *cli.Context) {
 	shellCfg = ShellConfig{
 		DockerCertPath:  cfg.machineDir,
 		DockerHost:      dockerHost,
+		K8sHost:		 k8sHost,
 		DockerTLSVerify: "1",
 		UsageHint:       usageHint,
 		MachineName:     cfg.machineName,
@@ -175,6 +186,7 @@ func cmdEnv(c *cli.Context) {
 	default:
 		shellCfg.Prefix = "export "
 		shellCfg.Suffix = "\"\n"
+		shellCfg.Suffix2 = "\n"
 		shellCfg.Delimiter = "=\""
 	}
 

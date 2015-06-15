@@ -271,6 +271,12 @@ func (d *Driver) Create() error {
 			{
 				SecurityGroupId: "",
 				Cidr:            "0.0.0.0/0",
+				Protocol:        "TCP",
+				Port:            6443,
+			},
+			{
+				SecurityGroupId: "",
+				Cidr:            "0.0.0.0/0",
 				Protocol:        "ICMP",
 				IcmpType:        8,
 				IcmpCode:        0,

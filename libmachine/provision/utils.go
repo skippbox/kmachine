@@ -214,10 +214,6 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
-	log.Debug("launching etcd")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name etcd b.gcr.io/kuar/etcd:2.1.1 --advertise-client-urls=http://127.0.0.1:2379 --listen-client-urls=http://127.0.0.1:2379 --listen-peer-urls=http://127.0.0.1:2380 --data-dir=/var/lib/etcd")); err != nil {
-		return fmt.Errorf("error installing etcd")
-	}
 	log.Debug("launching master")
 	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /tmp/tokenfile.txt:/tmp/tokenfile.txt gcr.io/google_containers/hyperkube:v1.0.3 /hyperkube kubelet --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests")); err != nil {
 		return fmt.Errorf("error installing master")

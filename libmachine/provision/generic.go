@@ -83,6 +83,17 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
   "hostNetwork": true,
   "containers":[
     {
+      "name": "etcd",
+      "image": "b.gcr.io/kuar/etcd:2.1.1",
+      "command": [
+              "--data-dir=/var/lib/etcd",
+              "--advertise-client-urls=http://127.0.0.1:2379",
+              "--listen-client-urls=http://127.0.0.1:2379",
+              "--listen-peer-urls=http://127.0.0.1:2380",
+              "--name=etcd"
+        ]
+    },
+    {
       "name": "controller-manager",
       "image": "gcr.io/google_containers/hyperkube:v1.0.3",
       "command": [
@@ -105,10 +116,9 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
               "apiserver",
               "--token-auth-file=/tmp/tokenfile.txt",
               "--allow-privileged=true",
-              "--service-cluster-ip-range=10.0.0.1/24",
+              "--service-cluster-ip-range=10.0.20.0/24",
               "--insecure-bind-address=0.0.0.0",
               "--etcd-servers=http://127.0.0.1:2379",
-              "--cluster_name=kmachine",
               "--v=2"
         ]
     },

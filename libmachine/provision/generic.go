@@ -106,7 +106,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
               "/hyperkube",
               "apiserver",
               "--token-auth-file=/tmp/tokenfile.txt",
-              "--portal_net=10.0.0.1/24",
+              "--portal-net=10.0.0.1/24",
               "--address=0.0.0.0",
               "--etcd_servers=http://127.0.0.1:4001",
               "--cluster_name=kmachine",

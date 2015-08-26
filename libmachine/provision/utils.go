@@ -215,17 +215,13 @@ func installk8sGeneric(p Provisioner) error {
 	}
 
 	log.Debug("launching etcd")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name etcd kubernetes/etcd:2.0.5.1 /usr/local/bin/etcd --addr=127.0.0.1:4001 --bind-addr=0.0.0.0:4001 --data-dir=/var/etcd/data")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name etcd b.gcr.io/kuar/etcd:2.1.1 --advertise-client-urls=http://127.0.0.1:2379 --listen-client-urls=http://127.0.0.1:2379 --listen-peer-urls=http://127.0.0.1:2380 --data-dir=/var/lib/etcd")); err != nil {
 		return fmt.Errorf("error installing etcd")
 	}
 	log.Debug("launching master")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /tmp/tokenfile.txt:/tmp/tokenfile.txt gcr.io/google_containers/hyperkube:v0.17.0 /hyperkube kubelet --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /tmp/tokenfile.txt:/tmp/tokenfile.txt gcr.io/google_containers/hyperkube:v1.0.3 /hyperkube kubelet --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests")); err != nil {
 		return fmt.Errorf("error installing master")
 
-	}
-	log.Debug("launching proxy")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --privileged=true --restart=always --name proxy gcr.io/google_containers/hyperkube:v0.17.0 /hyperkube proxy --master=http://127.0.0.1:8080 --v=2")); err != nil {
-		return fmt.Errorf("error installing proxy")
 	}
 
 	return nil

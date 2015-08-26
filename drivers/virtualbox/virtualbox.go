@@ -41,6 +41,7 @@ type Driver struct {
 	MachineName         string
 	SSHUser             string
 	SSHPort             int
+        K8SPort             int
 	Memory              int
 	DiskSize            int
 	Boot2DockerURL      string
@@ -385,6 +386,10 @@ func (d *Driver) Start() error {
 		if err != nil {
 			return err
 		}
+                d.K8SPort, err = setPortForwarding(d.MachineName, 1, "k8s", "tcp", 8080, d.K8SPort)
+                if err != nil {
+                        return err
+                }
 		if err := vbm("startvm", d.MachineName, "--type", "headless"); err != nil {
 			return err
 		}

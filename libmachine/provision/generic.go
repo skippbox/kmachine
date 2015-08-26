@@ -76,7 +76,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 	
 	k8sConfigTmpl := `
 {
-"apiVersion": "v1beta3",
+"apiVersion": "v1",
 "kind": "Pod",
 "metadata": {"name":"kubernetes"},
 "spec":{
@@ -84,19 +84,17 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
   "containers":[
     {
       "name": "controller-manager",
-      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "image": "gcr.io/google_containers/hyperkube:v1.0.3",
       "command": [
               "/hyperkube",
               "controller-manager",
-              "--master=127.0.0.1:8080",
-              "--machines=127.0.0.1",
-              "--sync_nodes=true",
+              "--master=http://127.0.0.1:8080",
               "--v=2"
         ]
     },
     {
       "name": "apiserver",
-      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "image": "gcr.io/google_containers/hyperkube:v1.0.3",
       "volumeMounts": [ 
          {"name": "token-volume",
           "mountPath": "/tmp/tokenfile.txt",
@@ -106,20 +104,32 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
               "/hyperkube",
               "apiserver",
               "--token-auth-file=/tmp/tokenfile.txt",
-              "--portal-net=10.0.0.1/24",
-              "--address=0.0.0.0",
-              "--etcd_servers=http://127.0.0.1:4001",
+              "--allow-privileged=true",
+              "--service-cluster-ip-range=10.0.0.1/24",
+              "--insecure-bind-address=0.0.0.0",
+              "--etcd-servers=http://127.0.0.1:2379",
               "--cluster_name=kmachine",
               "--v=2"
         ]
     },
     {
+      "name": "proxy",
+      "image": "gcr.io/google_containers/hyperkube:v1.0.3",
+      "securityContext": "privileged=true"
+      "command": [
+              "/hyperkube",
+              "proxy",
+              "--master=http://127.0.0.1:8080",
+              "--v=2"
+        ]
+    },
+    {
       "name": "scheduler",
-      "image": "gcr.io/google_containers/hyperkube:v0.17.0",
+      "image": "gcr.io/google_containers/hyperkube:v1.0.3",
       "command": [
               "/hyperkube",
               "scheduler",
-              "--master=127.0.0.1:8080",
+              "--master=http://127.0.0.1:8080",
               "--v=2"
         ]
     }

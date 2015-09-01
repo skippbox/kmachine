@@ -85,7 +85,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
     {
       "name": "etcd",
       "image": "b.gcr.io/kuar/etcd:2.1.1",
-      "command": [
+      "args": [
               "--data-dir=/var/lib/etcd",
               "--advertise-client-urls=http://127.0.0.1:2379",
               "--listen-client-urls=http://127.0.0.1:2379",
@@ -96,7 +96,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
     {
       "name": "controller-manager",
       "image": "gcr.io/google_containers/hyperkube:v1.0.3",
-      "command": [
+      "args": [
               "/hyperkube",
               "controller-manager",
               "--master=http://127.0.0.1:8080",
@@ -111,7 +111,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
           "mountPath": "/tmp/tokenfile.txt",
           "readOnly": true } 
           ],
-      "command": [
+      "args": [
               "/hyperkube",
               "apiserver",
               "--token-auth-file=/tmp/tokenfile.txt",
@@ -125,8 +125,10 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
     {
       "name": "proxy",
       "image": "gcr.io/google_containers/hyperkube:v1.0.3",
-      "securityContext": "privileged=true"
-      "command": [
+      "securityContext": {
+        "privileged": true
+        },
+      "args": [
               "/hyperkube",
               "proxy",
               "--master=http://127.0.0.1:8080",
@@ -136,7 +138,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
     {
       "name": "scheduler",
       "image": "gcr.io/google_containers/hyperkube:v1.0.3",
-      "command": [
+      "args": [
               "/hyperkube",
               "scheduler",
               "--master=http://127.0.0.1:8080",

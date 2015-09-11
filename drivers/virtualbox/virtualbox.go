@@ -29,6 +29,8 @@ import (
 const (
 	isoFilename         = "boot2docker.iso"
 	defaultHostOnlyCIDR = "192.168.99.1/24"
+	defaultNictype      = "82540EM"
+	defaultNicpromisc   = "deny"
 )
 
 var (
@@ -36,23 +38,17 @@ var (
 )
 
 type Driver struct {
-	IPAddress           string
+	*drivers.BaseDriver
 	CPU                 int
-	MachineName         string
-	SSHUser             string
-	SSHPort             int
-        K8SPort             int
+    K8SPort             int
 	Memory              int
 	DiskSize            int
 	Boot2DockerURL      string
-	CaCertPath          string
-	PrivateKeyPath      string
-	SwarmMaster         bool
-	SwarmHost           string
-	SwarmDiscovery      string
-	storePath           string
 	Boot2DockerImportVM string
 	HostOnlyCIDR        string
+	HostOnlyNicType     string
+	HostOnlyPromiscMode string
+	NoShare             bool
 }
 
 func init() {
@@ -101,35 +97,32 @@ func GetCreateFlags() []cli.Flag {
 			Value:  defaultHostOnlyCIDR,
 			EnvVar: "VIRTUALBOX_HOSTONLY_CIDR",
 		},
+		cli.StringFlag{
+			Name:   "virtualbox-hostonly-nictype",
+			Usage:  "Specify the Host Only Network Adapter Type",
+			Value:  defaultNictype,
+			EnvVar: "VIRTUALBOX_HOSTONLY_NIC_TYPE",
+		},
+		cli.StringFlag{
+			Name:   "virtualbox-hostonly-nicpromisc",
+			Usage:  "Specify the Host Only Network Adapter Promiscuous Mode",
+			Value:  defaultNicpromisc,
+			EnvVar: "VIRTUALBOX_HOSTONLY_NIC_PROMISC",
+		},
+		cli.BoolFlag{
+			Name:  "virtualbox-no-share",
+			Usage: "Disable the mount of your home directory",
+		},
 	}
 }
 
 func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	return &Driver{MachineName: machineName, storePath: storePath, CaCertPath: caCert, PrivateKeyPath: privateKey}, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+	inner := drivers.NewBaseDriver(machineName, storePath, caCert, privateKey)
+	return &Driver{BaseDriver: inner}, nil
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return "localhost", nil
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	return d.SSHPort, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
@@ -166,6 +159,9 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SSHUser = "docker"
 	d.Boot2DockerImportVM = flags.String("virtualbox-import-boot2docker-vm")
 	d.HostOnlyCIDR = flags.String("virtualbox-hostonly-cidr")
+	d.HostOnlyNicType = flags.String("virtualbox-hostonly-nictype")
+	d.HostOnlyPromiscMode = flags.String("virtualbox-hostonly-nicpromisc")
+	d.NoShare = flags.Bool("virtualbox-no-share")
 
 	return nil
 }
@@ -238,7 +234,7 @@ func (d *Driver) Create() error {
 	}
 
 	if err := vbm("createvm",
-		"--basefolder", d.storePath,
+		"--basefolder", d.ResolveStorePath("."),
 		"--name", d.MachineName,
 		"--register"); err != nil {
 		return err
@@ -271,7 +267,6 @@ func (d *Driver) Create() error {
 		"--natdnsproxy1", "off",
 		"--cpuhotplug", "off",
 		"--pae", "on",
-		"--synthcpu", "off",
 		"--hpet", "on",
 		"--hwvirtex", "on",
 		"--nestedpaging", "on",
@@ -305,7 +300,7 @@ func (d *Driver) Create() error {
 		"--port", "0",
 		"--device", "0",
 		"--type", "dvddrive",
-		"--medium", filepath.Join(d.storePath, "boot2docker.iso")); err != nil {
+		"--medium", d.ResolveStorePath("boot2docker.iso")); err != nil {
 		return err
 	}
 
@@ -337,7 +332,8 @@ func (d *Driver) Create() error {
 		// TODO "linux"
 	}
 
-	if shareDir != "" {
+	if shareDir != "" && !d.NoShare {
+		log.Debugf("setting up shareDir")
 		if _, err := os.Stat(shareDir); err != nil && !os.IsNotExist(err) {
 			return err
 		} else if !os.IsNotExist(err) {
@@ -369,15 +365,31 @@ func (d *Driver) Create() error {
 	return nil
 }
 
+func (d *Driver) hostOnlyIpAvailable() bool {
+	ip, err := d.GetIP()
+	if err != nil {
+		log.Debug("ERROR getting IP: %s", err)
+		return false
+	}
+	if ip != "" {
+		log.Debugf("IP is %s", ip)
+		return true
+	}
+	log.Debug("Strangely, there was no error attempting to get the IP, but it was still empty.")
+	return false
+}
+
 func (d *Driver) Start() error {
 	s, err := d.GetState()
 	if err != nil {
 		return err
 	}
 
-	// check network to re-create if needed
-	if err := d.setupHostOnlyNetwork(d.MachineName); err != nil {
-		return err
+	if s == state.Stopped {
+		// check network to re-create if needed
+		if err := d.setupHostOnlyNetwork(d.MachineName); err != nil {
+			return fmt.Errorf("Error setting up host only network on machine start: %s", err)
+		}
 	}
 
 	switch s {
@@ -403,11 +415,18 @@ func (d *Driver) Start() error {
 		log.Infof("VM not in restartable state")
 	}
 
+	// Wait for SSH over NAT to be available before returning to user
 	if err := drivers.WaitForSSH(d); err != nil {
 		return err
 	}
 
+	// Bail if we don't get an IP from DHCP after a given number of seconds.
+	if err := utils.WaitForSpecific(d.hostOnlyIpAvailable, 5, 4*time.Second); err != nil {
+		return err
+	}
+
 	d.IPAddress, err = d.GetIP()
+
 	return err
 }
 
@@ -446,6 +465,8 @@ func (d *Driver) Remove() error {
 			return err
 		}
 	}
+	// vbox will not release it's lock immediately after the stop
+	time.Sleep(1 * time.Second)
 	return vbm("unregistervm", "--delete", d.MachineName)
 }
 
@@ -517,6 +538,7 @@ func (d *Driver) GetIP() (string, error) {
 	}
 
 	log.Debugf("SSH returned: %s\nEND SSH\n", output)
+
 	// parse to find: inet 192.168.59.103/24 brd 192.168.59.255 scope global eth1
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
@@ -534,7 +556,7 @@ func (d *Driver) publicSSHKeyPath() string {
 }
 
 func (d *Driver) diskPath() string {
-	return filepath.Join(d.storePath, "disk.vmdk")
+	return d.ResolveStorePath("disk.vmdk")
 }
 
 // Make a boot2docker VM disk image.
@@ -625,7 +647,8 @@ func (d *Driver) setupHostOnlyNetwork(machineName string) error {
 
 	if err := vbm("modifyvm", machineName,
 		"--nic2", "hostonly",
-		"--nictype2", "82540EM",
+		"--nictype2", d.HostOnlyNicType,
+		"--nicpromisc2", d.HostOnlyPromiscMode,
 		"--hostonlyadapter2", hostOnlyNetwork.Name,
 		"--cableconnected2", "on"); err != nil {
 		return err
@@ -643,7 +666,7 @@ func createDiskImage(dest string, size int, r io.Reader) error {
 	cmd := exec.Command(vboxManageCmd, "convertfromraw", "stdin", dest,
 		fmt.Sprintf("%d", sizeBytes), "--format", "VMDK")
 
-	if os.Getenv("DEBUG") != "" {
+	if os.Getenv("MACHINE_DEBUG") != "" {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
@@ -752,7 +775,7 @@ func getRandomIPinSubnet(baseIP net.IP) (net.IP, error) {
 	for i := 0; i < 5; i++ {
 		n := rand.Intn(25)
 		if byte(n) != nAddr[3] {
-			dhcpAddr = net.IPv4(nAddr[0], nAddr[1], nAddr[2], byte(1))
+			dhcpAddr = net.IPv4(nAddr[0], nAddr[1], nAddr[2], byte(n))
 			break
 		}
 	}

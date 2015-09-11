@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	azure "github.com/MSOpenTech/azure-sdk-for-go"
@@ -20,8 +19,7 @@ import (
 )
 
 type Driver struct {
-	IPAddress               string
-	MachineName             string
+	*drivers.BaseDriver
 	SubscriptionID          string
 	SubscriptionCert        string
 	PublishSettingsFilePath string
@@ -29,15 +27,8 @@ type Driver struct {
 	Size                    string
 	UserPassword            string
 	Image                   string
-	SSHUser                 string
-	SSHPort                 int
 	DockerPort              int
-	CaCertPath              string
-	PrivateKeyPath          string
-	SwarmMaster             bool
-	SwarmHost               string
-	SwarmDiscovery          string
-	storePath               string
+	DockerSwarmMasterPort   int
 }
 
 func init() {
@@ -55,6 +46,11 @@ func GetCreateFlags() []cli.Flag {
 			Name:  "azure-docker-port",
 			Usage: "Azure Docker port",
 			Value: 2376,
+		},
+		cli.IntFlag{
+			Name:  "azure-docker-swarm-master-port",
+			Usage: "Azure Docker Swarm master port",
+			Value: 3376,
 		},
 		cli.StringFlag{
 			EnvVar: "AZURE_IMAGE",
@@ -107,36 +103,13 @@ func GetCreateFlags() []cli.Flag {
 }
 
 func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	d := &Driver{MachineName: machineName, storePath: storePath, CaCertPath: caCert, PrivateKeyPath: privateKey}
+	inner := drivers.NewBaseDriver(machineName, storePath, caCert, privateKey)
+	d := &Driver{BaseDriver: inner}
 	return d, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
@@ -193,6 +166,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SSHUser = username
 	d.UserPassword = flags.String("azure-password")
 	d.DockerPort = flags.Int("azure-docker-port")
+	d.DockerSwarmMasterPort = flags.Int("azure-docker-swarm-master-port")
 	d.SSHPort = flags.Int("azure-ssh-port")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
@@ -242,7 +216,7 @@ func (d *Driver) Create() error {
 	}
 
 	log.Debug("Authorizing ports...")
-	if err := d.addDockerEndpoint(vmConfig); err != nil {
+	if err := d.addDockerEndpoints(vmConfig); err != nil {
 		return err
 	}
 
@@ -405,7 +379,7 @@ func (d *Driver) setUserSubscription() error {
 	return azure.ImportPublishSettings(d.SubscriptionID, d.SubscriptionCert)
 }
 
-func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
+func (d *Driver) addDockerEndpoints(vmConfig *vmClient.Role) error {
 	configSets := vmConfig.ConfigurationSets.ConfigurationSet
 	if len(configSets) == 0 {
 		return errors.New("no configuration set")
@@ -418,7 +392,18 @@ func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
 			Name:      "docker",
 			Protocol:  "tcp",
 			Port:      d.DockerPort,
-			LocalPort: d.DockerPort}
+			LocalPort: d.DockerPort,
+		}
+		if d.SwarmMaster {
+			swarm_ep := vmClient.InputEndpoint{
+				Name:      "docker swarm",
+				Protocol:  "tcp",
+				Port:      d.DockerSwarmMasterPort,
+				LocalPort: d.DockerSwarmMasterPort,
+			}
+			configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, swarm_ep)
+			log.Debugf("added Docker swarm master endpoint (port %d) to configuration", d.DockerSwarmMasterPort)
+		}
 		configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, ep)
 		log.Debugf("added Docker endpoint (port %d) to configuration", d.DockerPort)
 	}
@@ -426,20 +411,16 @@ func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
 }
 
 func (d *Driver) generateCertForAzure() error {
-	if err := ssh.GenerateSSHKey(d.sshKeyPath()); err != nil {
+	if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
 		return err
 	}
 
-	cmd := exec.Command("openssl", "req", "-x509", "-key", d.sshKeyPath(), "-nodes", "-days", "365", "-newkey", "rsa:2048", "-out", d.azureCertPath(), "-subj", "/C=AU/ST=Some-State/O=InternetWidgitsPtyLtd/CN=\\*")
+	cmd := exec.Command("openssl", "req", "-x509", "-key", d.GetSSHKeyPath(), "-nodes", "-days", "365", "-newkey", "rsa:2048", "-out", d.azureCertPath(), "-subj", "/C=AU/ST=Some-State/O=InternetWidgitsPtyLtd/CN=\\*")
 	return cmd.Run()
 }
 
-func (d *Driver) sshKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
 func (d *Driver) azureCertPath() string {
-	return filepath.Join(d.storePath, "azure_cert.pem")
+	return d.ResolveStorePath("azure_cert.pem")
 }
 
 func (d *Driver) getHostname() string {

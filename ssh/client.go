@@ -54,6 +54,8 @@ var (
 		"-o", "LogLevel=quiet", // suppress "Warning: Permanently added '[localhost]:2022' (ECDSA) to the list of known hosts."
 		"-o", "ConnectionAttempts=3", // retry 3 times if SSH connection fails
 		"-o", "ConnectTimeout=10", // timeout after 10 seconds
+		"-o", "ControlMaster=no", // disable ssh multiplexing
+		"-o", "ControlPath=no",
 	}
 	defaultClientType SSHClientType = External
 )
@@ -73,10 +75,7 @@ func SetDefaultClient(clientType SSHClientType) {
 func NewClient(user string, host string, port int, auth *Auth) (Client, error) {
 	sshBinaryPath, err := exec.LookPath("ssh")
 	if err != nil {
-		if defaultClientType == External {
-			log.Fatal("Requested shellout SSH client type but no ssh binary available")
-		}
-		log.Debug("ssh binary not found, using native Go implementation")
+		log.Debug("SSH binary not found, using native Go implementation")
 		return NewNativeClient(user, host, port, auth)
 	}
 

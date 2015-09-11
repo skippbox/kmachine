@@ -41,7 +41,7 @@ load ${BASE_TEST_DIR}/helpers.bash
 }
 
 @test "$DRIVER: docker commands with the socket should work" {
-  run machine ssh $NAME -- docker version
+  run machine ssh $NAME -- sudo docker version
 }
 
 @test "$DRIVER: stop" {
@@ -103,4 +103,10 @@ load ${BASE_TEST_DIR}/helpers.bash
   run machine ls
   [ "$status" -eq 0  ]
   [[ ${lines[1]} == *"Running"*  ]]
+}
+
+@test "$DRIVER: status" {
+  run machine status $NAME
+  [ "$status" -eq 0 ]
+  [[ ${output} == *"Running"* ]]
 }

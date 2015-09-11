@@ -35,6 +35,10 @@ func (d DriverOptionsMock) String(key string) string {
 	return d.Data[key].(string)
 }
 
+func (d DriverOptionsMock) StringSlice(key string) []string {
+	return d.Data[key].([]string)
+}
+
 func (d DriverOptionsMock) Int(key string) int {
 	return d.Data[key].(int)
 }
@@ -81,6 +85,7 @@ func getDefaultTestDriverFlags() *DriverOptionsMock {
 			"amazonec2-request-spot-instance": false,
 			"amazonec2-spot-price":            "",
 			"amazonec2-private-address-only":  false,
+			"amazonec2-use-private-address":   false,
 			"amazonec2-monitoring":            false,
 		},
 	}

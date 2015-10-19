@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/docker/machine/commands/mcndirs"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,6 +25,13 @@ func (d DriverOptionsMock) String(key string) string {
 		return value.(string)
 	}
 	return ""
+}
+
+func (d DriverOptionsMock) StringSlice(key string) []string {
+	if value, ok := d.Data[key]; ok {
+		return value.([]string)
+	}
+	return []string{}
 }
 
 func (d DriverOptionsMock) Int(key string) int {
@@ -49,7 +57,7 @@ func getTestStorePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	os.Setenv("MACHINE_STORAGE_PATH", tmpDir)
+	mcndirs.BaseDir = tmpDir
 	return tmpDir, nil
 }
 
@@ -73,10 +81,7 @@ func getTestDriver() (*Driver, error) {
 	}
 	defer cleanup()
 
-	d, err := NewDriver(machineTestName, storePath, machineTestCaCert, machineTestPrivateKey)
-	if err != nil {
-		return nil, err
-	}
+	d := NewDriver(machineTestName, storePath)
 	d.SetConfigFromFlags(getDefaultTestDriverFlags())
 	drv := d.(*Driver)
 	return drv, nil

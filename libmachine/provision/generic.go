@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"text/template"
 
-	"github.com/docker/machine/drivers"
 	"github.com/docker/machine/libmachine/auth"
+	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
 	"github.com/docker/machine/libmachine/swarm"
 )
@@ -73,7 +73,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 	var (
 		k8sCfg bytes.Buffer
 	)
-	
+
 	k8sConfigTmpl := `
 {
 "apiVersion": "v1",
@@ -174,6 +174,11 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 	}, nil
 }
 
+func (provisioner *GenericProvisioner) GetOsReleaseInfo() (*OsRelease, error) {
+	return provisioner.OsReleaseInfo, nil
+
+}
+
 func (provisioner *GenericProvisioner) GenerateDockerOptions(dockerPort int) (*DockerOptions, error) {
 	var (
 		engineCfg bytes.Buffer
@@ -197,6 +202,8 @@ DOCKER_OPTS='
 {{ end }}{{ range .EngineOptions.ArbitraryFlags }}--{{.}}
 {{ end }}
 '
+{{range .EngineOptions.Env}}export \"{{ printf "%q" . }}\"
+{{end}}
 `
 	t, err := template.New("engineConfig").Parse(engineConfigTmpl)
 	if err != nil {

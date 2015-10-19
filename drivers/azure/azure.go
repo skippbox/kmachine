@@ -5,23 +5,21 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	azure "github.com/MSOpenTech/azure-sdk-for-go"
 	"github.com/MSOpenTech/azure-sdk-for-go/clients/vmClient"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/ssh"
-	"github.com/docker/machine/state"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/mcnutils"
+	"github.com/docker/machine/libmachine/ssh"
+	"github.com/docker/machine/libmachine/state"
 )
 
 type Driver struct {
-	IPAddress               string
-	MachineName             string
+	*drivers.BaseDriver
 	SubscriptionID          string
 	SubscriptionCert        string
 	PublishSettingsFilePath string
@@ -29,114 +27,100 @@ type Driver struct {
 	Size                    string
 	UserPassword            string
 	Image                   string
-	SSHUser                 string
-	SSHPort                 int
 	DockerPort              int
-	CaCertPath              string
-	PrivateKeyPath          string
-	SwarmMaster             bool
-	SwarmHost               string
-	SwarmDiscovery          string
-	storePath               string
+	DockerSwarmMasterPort   int
 }
 
-func init() {
-	drivers.Register("azure", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+const (
+	defaultDockerPort      = 2376
+	defaultSwarmMasterPort = 3376
+	defaultLocation        = "West US"
+	defaultSize            = "Small"
+	defaultSSHPort         = 22
+	defaultSSHUsername     = "ubuntu"
+)
 
 // GetCreateFlags registers the flags this d adds to
 // "docker hosts create"
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.IntFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.IntFlag{
 			Name:  "azure-docker-port",
 			Usage: "Azure Docker port",
-			Value: 2376,
+			Value: defaultDockerPort,
 		},
-		cli.StringFlag{
+		mcnflag.IntFlag{
+			Name:  "azure-docker-swarm-master-port",
+			Usage: "Azure Docker Swarm master port",
+			Value: defaultSwarmMasterPort,
+		},
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_IMAGE",
 			Name:   "azure-image",
 			Usage:  "Azure image name. Default is Ubuntu 14.04 LTS x64",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_LOCATION",
 			Name:   "azure-location",
 			Usage:  "Azure location",
-			Value:  "West US",
+			Value:  defaultLocation,
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:  "azure-password",
 			Usage: "Azure user password",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_PUBLISH_SETTINGS_FILE",
 			Name:   "azure-publish-settings-file",
 			Usage:  "Azure publish settings file",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_SIZE",
 			Name:   "azure-size",
 			Usage:  "Azure size",
-			Value:  "Small",
+			Value:  defaultSize,
 		},
-		cli.IntFlag{
+		mcnflag.IntFlag{
 			Name:  "azure-ssh-port",
 			Usage: "Azure SSH port",
-			Value: 22,
+			Value: defaultSSHPort,
 		},
-
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_SUBSCRIPTION_CERT",
 			Name:   "azure-subscription-cert",
 			Usage:  "Azure subscription cert",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "AZURE_SUBSCRIPTION_ID",
 			Name:   "azure-subscription-id",
 			Usage:  "Azure subscription ID",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:  "azure-username",
 			Usage: "Azure username",
-			Value: "ubuntu",
+			Value: defaultSSHUsername,
 		},
 	}
 }
 
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	d := &Driver{MachineName: machineName, storePath: storePath, CaCertPath: caCert, PrivateKeyPath: privateKey}
-	return d, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+func NewDriver(hostName, storePath string) drivers.Driver {
+	d := &Driver{
+		DockerPort:            defaultDockerPort,
+		DockerSwarmMasterPort: defaultSwarmMasterPort,
+		Location:              defaultLocation,
+		Size:                  defaultSize,
+		BaseDriver: &drivers.BaseDriver{
+			SSHPort:     defaultSSHPort,
+			SSHUser:     defaultSSHUsername,
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
+	return d
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
@@ -193,6 +177,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SSHUser = username
 	d.UserPassword = flags.String("azure-password")
 	d.DockerPort = flags.Int("azure-docker-port")
+	d.DockerSwarmMasterPort = flags.Int("azure-docker-swarm-master-port")
 	d.SSHPort = flags.Int("azure-ssh-port")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
@@ -242,7 +227,7 @@ func (d *Driver) Create() error {
 	}
 
 	log.Debug("Authorizing ports...")
-	if err := d.addDockerEndpoint(vmConfig); err != nil {
+	if err := d.addDockerEndpoints(vmConfig); err != nil {
 		return err
 	}
 
@@ -394,7 +379,7 @@ func (d *Driver) Kill() error {
 }
 
 func generateVMName() string {
-	randomID := utils.TruncateID(utils.GenerateRandomID())
+	randomID := mcnutils.TruncateID(mcnutils.GenerateRandomID())
 	return fmt.Sprintf("docker-host-%s", randomID)
 }
 
@@ -405,7 +390,7 @@ func (d *Driver) setUserSubscription() error {
 	return azure.ImportPublishSettings(d.SubscriptionID, d.SubscriptionCert)
 }
 
-func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
+func (d *Driver) addDockerEndpoints(vmConfig *vmClient.Role) error {
 	configSets := vmConfig.ConfigurationSets.ConfigurationSet
 	if len(configSets) == 0 {
 		return errors.New("no configuration set")
@@ -418,7 +403,18 @@ func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
 			Name:      "docker",
 			Protocol:  "tcp",
 			Port:      d.DockerPort,
-			LocalPort: d.DockerPort}
+			LocalPort: d.DockerPort,
+		}
+		if d.SwarmMaster {
+			swarm_ep := vmClient.InputEndpoint{
+				Name:      "docker swarm",
+				Protocol:  "tcp",
+				Port:      d.DockerSwarmMasterPort,
+				LocalPort: d.DockerSwarmMasterPort,
+			}
+			configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, swarm_ep)
+			log.Debugf("added Docker swarm master endpoint (port %d) to configuration", d.DockerSwarmMasterPort)
+		}
 		configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, ep)
 		log.Debugf("added Docker endpoint (port %d) to configuration", d.DockerPort)
 	}
@@ -426,20 +422,16 @@ func (d *Driver) addDockerEndpoint(vmConfig *vmClient.Role) error {
 }
 
 func (d *Driver) generateCertForAzure() error {
-	if err := ssh.GenerateSSHKey(d.sshKeyPath()); err != nil {
+	if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
 		return err
 	}
 
-	cmd := exec.Command("openssl", "req", "-x509", "-key", d.sshKeyPath(), "-nodes", "-days", "365", "-newkey", "rsa:2048", "-out", d.azureCertPath(), "-subj", "/C=AU/ST=Some-State/O=InternetWidgitsPtyLtd/CN=\\*")
+	cmd := exec.Command("openssl", "req", "-x509", "-key", d.GetSSHKeyPath(), "-nodes", "-days", "365", "-newkey", "rsa:2048", "-out", d.azureCertPath(), "-subj", "/C=AU/ST=Some-State/O=InternetWidgitsPtyLtd/CN=\\*")
 	return cmd.Run()
 }
 
-func (d *Driver) sshKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
 func (d *Driver) azureCertPath() string {
-	return filepath.Join(d.storePath, "azure_cert.pem")
+	return d.ResolveStorePath("azure_cert.pem")
 }
 
 func (d *Driver) getHostname() string {

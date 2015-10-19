@@ -1,14 +1,27 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/libmachine"
-	"github.com/docker/machine/log"
+	"github.com/docker/machine/cli"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/host"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/persist"
+	"github.com/docker/machine/libmachine/state"
+	"github.com/docker/machine/libmachine/swarm"
+	"github.com/skarademir/naturalsort"
+)
+
+var (
+	stateTimeoutDuration = 10 * time.Second
 )
 
 // FilterOptions -
@@ -16,19 +29,29 @@ type FilterOptions struct {
 	SwarmName  []string
 	DriverName []string
 	State      []string
+	Name       []string
+}
+
+type HostListItem struct {
+	Name         string
+	Active       bool
+	DriverName   string
+	State        state.State
+	URL          string
+	SwarmOptions *swarm.SwarmOptions
 }
 
 func cmdLs(c *cli.Context) {
 	quiet := c.Bool("quiet")
 	filters, err := parseFilters(c.StringSlice("filter"))
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 
-	mcn := getDefaultMcn(c)
-	hostList, err := mcn.List()
+	store := getStore(c)
+	hostList, err := listHosts(store)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 
 	hostList = filterHosts(hostList, filters)
@@ -58,12 +81,12 @@ func cmdLs(c *cli.Context) {
 		}
 	}
 
-	items := libmachine.GetHostListItems(hostList)
+	items := getHostListItems(hostList)
 
 	sortHostListItemsByName(items)
 
 	for _, item := range items {
-		activeString := ""
+		activeString := "-"
 		if item.Active {
 			activeString = "*"
 		}
@@ -87,6 +110,9 @@ func parseFilters(filters []string) (FilterOptions, error) {
 	options := FilterOptions{}
 	for _, f := range filters {
 		kv := strings.SplitN(f, "=", 2)
+		if len(kv) != 2 {
+			return options, errors.New("Unsupported filter syntax.")
+		}
 		key, value := kv[0], kv[1]
 
 		switch key {
@@ -96,6 +122,8 @@ func parseFilters(filters []string) (FilterOptions, error) {
 			options.DriverName = append(options.DriverName, value)
 		case "state":
 			options.State = append(options.State, value)
+		case "name":
+			options.Name = append(options.Name, value)
 		default:
 			return options, fmt.Errorf("Unsupported filter key '%s'", key)
 		}
@@ -103,14 +131,15 @@ func parseFilters(filters []string) (FilterOptions, error) {
 	return options, nil
 }
 
-func filterHosts(hosts []*libmachine.Host, filters FilterOptions) []*libmachine.Host {
+func filterHosts(hosts []*host.Host, filters FilterOptions) []*host.Host {
 	if len(filters.SwarmName) == 0 &&
 		len(filters.DriverName) == 0 &&
-		len(filters.State) == 0 {
+		len(filters.State) == 0 &&
+		len(filters.Name) == 0 {
 		return hosts
 	}
 
-	filteredHosts := []*libmachine.Host{}
+	filteredHosts := []*host.Host{}
 	swarmMasters := getSwarmMasters(hosts)
 
 	for _, h := range hosts {
@@ -121,7 +150,7 @@ func filterHosts(hosts []*libmachine.Host, filters FilterOptions) []*libmachine.
 	return filteredHosts
 }
 
-func getSwarmMasters(hosts []*libmachine.Host) map[string]string {
+func getSwarmMasters(hosts []*host.Host) map[string]string {
 	swarmMasters := make(map[string]string)
 	for _, h := range hosts {
 		swarmOptions := h.HostOptions.SwarmOptions
@@ -132,15 +161,16 @@ func getSwarmMasters(hosts []*libmachine.Host) map[string]string {
 	return swarmMasters
 }
 
-func filterHost(host *libmachine.Host, filters FilterOptions, swarmMasters map[string]string) bool {
+func filterHost(host *host.Host, filters FilterOptions, swarmMasters map[string]string) bool {
 	swarmMatches := matchesSwarmName(host, filters.SwarmName, swarmMasters)
 	driverMatches := matchesDriverName(host, filters.DriverName)
 	stateMatches := matchesState(host, filters.State)
+	nameMatches := matchesName(host, filters.Name)
 
-	return swarmMatches && driverMatches && stateMatches
+	return swarmMatches && driverMatches && stateMatches && nameMatches
 }
 
-func matchesSwarmName(host *libmachine.Host, swarmNames []string, swarmMasters map[string]string) bool {
+func matchesSwarmName(host *host.Host, swarmNames []string, swarmMasters map[string]string) bool {
 	if len(swarmNames) == 0 {
 		return true
 	}
@@ -154,7 +184,7 @@ func matchesSwarmName(host *libmachine.Host, swarmNames []string, swarmMasters m
 	return false
 }
 
-func matchesDriverName(host *libmachine.Host, driverNames []string) bool {
+func matchesDriverName(host *host.Host, driverNames []string) bool {
 	if len(driverNames) == 0 {
 		return true
 	}
@@ -166,7 +196,7 @@ func matchesDriverName(host *libmachine.Host, driverNames []string) bool {
 	return false
 }
 
-func matchesState(host *libmachine.Host, states []string) bool {
+func matchesState(host *host.Host, states []string) bool {
 	if len(states) == 0 {
 		return true
 	}
@@ -180,4 +210,155 @@ func matchesState(host *libmachine.Host, states []string) bool {
 		}
 	}
 	return false
+}
+
+func matchesName(host *host.Host, names []string) bool {
+	if len(names) == 0 {
+		return true
+	}
+	for _, n := range names {
+		r, err := regexp.Compile(n)
+		if err != nil {
+			fatal(err)
+		}
+		if r.MatchString(host.Driver.GetMachineName()) {
+			return true
+		}
+	}
+	return false
+}
+
+func getActiveHost(store persist.Store) (*host.Host, error) {
+	hosts, err := listHosts(store)
+	if err != nil {
+		return nil, err
+	}
+
+	hostListItems := getHostListItems(hosts)
+
+	for _, item := range hostListItems {
+		if item.Active {
+			h, err := loadHost(store, item.Name)
+			if err != nil {
+				return nil, err
+			}
+			return h, nil
+		}
+	}
+
+	return nil, errors.New("Active host not found")
+}
+
+func attemptGetHostState(h *host.Host, stateQueryChan chan<- HostListItem) {
+	stateCh := make(chan state.State)
+	urlCh := make(chan string)
+
+	go func() {
+		currentState, err := h.Driver.GetState()
+		if err != nil {
+			log.Errorf("error getting state for host %s: %s", h.Name, err)
+		}
+
+		stateCh <- currentState
+	}()
+
+	go func() {
+		url, err := h.GetURL()
+		if err != nil {
+			if err.Error() == drivers.ErrHostIsNotRunning.Error() {
+				url = ""
+			} else {
+				log.Errorf("error getting URL for host %s: %s", h.Name, err)
+			}
+		}
+
+		urlCh <- url
+	}()
+
+	currentState := <-stateCh
+	url := <-urlCh
+
+	close(stateCh)
+	close(urlCh)
+
+	active, err := isActive(h, currentState, url)
+	if err != nil {
+		log.Errorf("error determining if host is active for host %s: %s",
+			h.Name, err)
+	}
+
+	stateQueryChan <- HostListItem{
+		Name:         h.Name,
+		Active:       active,
+		DriverName:   h.Driver.DriverName(),
+		State:        currentState,
+		URL:          url,
+		SwarmOptions: h.HostOptions.SwarmOptions,
+	}
+}
+
+func getHostState(h *host.Host, hostListItemsChan chan<- HostListItem) {
+	// This channel is used to communicate the properties we are querying
+	// about the host in the case of a successful read.
+	stateQueryChan := make(chan HostListItem)
+
+	go attemptGetHostState(h, stateQueryChan)
+
+	select {
+	// If we get back useful information, great.  Forward it straight to
+	// the original parent channel.
+	case hli := <-stateQueryChan:
+		hostListItemsChan <- hli
+
+	// Otherwise, give up after a predetermined duration.
+	case <-time.After(stateTimeoutDuration):
+		hostListItemsChan <- HostListItem{
+			Name:       h.Name,
+			DriverName: h.Driver.DriverName(),
+			State:      state.Timeout,
+		}
+	}
+}
+
+func getHostListItems(hostList []*host.Host) []HostListItem {
+	hostListItems := []HostListItem{}
+	hostListItemsChan := make(chan HostListItem)
+
+	for _, h := range hostList {
+		go getHostState(h, hostListItemsChan)
+	}
+
+	for range hostList {
+		hostListItems = append(hostListItems, <-hostListItemsChan)
+	}
+
+	close(hostListItemsChan)
+	return hostListItems
+}
+
+// IsActive provides a single function for determining if a host is active
+// based on both the url and if the host is stopped.
+func isActive(h *host.Host, currentState state.State, url string) (bool, error) {
+	dockerHost := os.Getenv("DOCKER_HOST")
+
+	running := currentState == state.Running
+	correctURL := url == dockerHost
+
+	isActive := running && correctURL
+
+	return isActive, nil
+}
+
+func sortHostListItemsByName(items []HostListItem) {
+	m := make(map[string]HostListItem, len(items))
+	s := make([]string, len(items))
+	for i, v := range items {
+		name := strings.ToLower(v.Name)
+		m[name] = v
+		s[i] = name
+	}
+	sort.Sort(naturalsort.NaturalSort(s))
+	for i, v := range s {
+		items[i] = m[v]
+	}
 }

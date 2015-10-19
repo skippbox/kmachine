@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/utils"
-	"github.com/docker/machine/version"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnutils"
+	"github.com/docker/machine/libmachine/version"
 	"github.com/rackspace/gophercloud"
 	"github.com/rackspace/gophercloud/openstack"
 	"github.com/rackspace/gophercloud/openstack/compute/v2/extensions/keypairs"
@@ -89,6 +89,7 @@ type IpAddress struct {
 	Network     string
 	AddressType string
 	Address     string
+	Version     int
 	Mac         string
 }
 
@@ -136,7 +137,7 @@ func (c *GenericClient) DeleteInstance(d *Driver) error {
 }
 
 func (c *GenericClient) WaitForInstanceStatus(d *Driver, status string) error {
-	return utils.WaitForSpecificOrError(func() (bool, error) {
+	return mcnutils.WaitForSpecificOrError(func() (bool, error) {
 		current, err := servers.Get(c.Compute, d.MachineId).Extract()
 		if err != nil {
 			return true, err
@@ -151,7 +152,7 @@ func (c *GenericClient) WaitForInstanceStatus(d *Driver, status string) error {
 		}
 
 		return false, nil
-	}, 50, 4*time.Second)
+	}, (d.ActiveTimeout / 4), 4*time.Second)
 }
 
 func (c *GenericClient) GetInstanceIpAddresses(d *Driver) ([]IpAddress, error) {
@@ -163,10 +164,17 @@ func (c *GenericClient) GetInstanceIpAddresses(d *Driver) ([]IpAddress, error) {
 	for network, networkAddresses := range server.Addresses {
 		for _, element := range networkAddresses.([]interface{}) {
 			address := element.(map[string]interface{})
+			version, ok := address["version"].(float64)
+			if !ok {
+				// Assume IPv4 if no version present.
+				version = 4
+			}
 
 			addr := IpAddress{
-				Network: network,
-				Address: address["addr"].(string),
+				Network:     network,
+				AddressType: Fixed,
+				Address:     address["addr"].(string),
+				Version:     int(version),
 			}
 
 			if tp, ok := address["OS-EXT-IPS:type"]; ok {
@@ -179,6 +187,7 @@ func (c *GenericClient) GetInstanceIpAddresses(d *Driver) ([]IpAddress, error) {
 			addresses = append(addresses, addr)
 		}
 	}
+
 	return addresses, nil
 }
 
@@ -437,7 +446,7 @@ func (c *GenericClient) Authenticate(d *Driver) error {
 		return err
 	}
 
-	provider.UserAgent.Prepend(fmt.Sprintf("docker-machine/v%s", version.VERSION))
+	provider.UserAgent.Prepend(fmt.Sprintf("docker-machine/v%d", version.ApiVersion))
 
 	if d.Insecure {
 		// Configure custom TLS settings.

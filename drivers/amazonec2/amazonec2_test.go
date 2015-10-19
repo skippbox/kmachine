@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/docker/machine/commands/mcndirs"
 	"github.com/docker/machine/drivers/amazonec2/amz"
 )
 
@@ -35,6 +36,10 @@ func (d DriverOptionsMock) String(key string) string {
 	return d.Data[key].(string)
 }
 
+func (d DriverOptionsMock) StringSlice(key string) []string {
+	return d.Data[key].([]string)
+}
+
 func (d DriverOptionsMock) Int(key string) int {
 	return d.Data[key].(int)
 }
@@ -52,7 +57,7 @@ func getTestStorePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	os.Setenv("MACHINE_STORAGE_PATH", tmpDir)
+	mcndirs.BaseDir = tmpDir
 	return tmpDir, nil
 }
 
@@ -81,6 +86,7 @@ func getDefaultTestDriverFlags() *DriverOptionsMock {
 			"amazonec2-request-spot-instance": false,
 			"amazonec2-spot-price":            "",
 			"amazonec2-private-address-only":  false,
+			"amazonec2-use-private-address":   false,
 			"amazonec2-monitoring":            false,
 		},
 	}
@@ -93,10 +99,7 @@ func getTestDriver() (*Driver, error) {
 	}
 	defer cleanup()
 
-	d, err := NewDriver(machineTestName, storePath, machineTestCaCert, machineTestPrivateKey)
-	if err != nil {
-		return nil, err
-	}
+	d := NewDriver(machineTestName, storePath)
 	d.SetConfigFromFlags(getDefaultTestDriverFlags())
 	drv := d.(*Driver)
 	return drv, nil

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"code.google.com/p/goauth2/oauth"
-	"github.com/docker/machine/log"
+	"github.com/docker/machine/libmachine/log"
 	raw "google.golang.org/api/compute/v1"
 )
 
@@ -92,7 +92,7 @@ func tokenFromWeb(config *oauth.Config) *oauth.Token {
 	}
 	_, err := t.Exchange(code)
 	if err != nil {
-		log.Fatalf("Token exchange error: %v", err)
+		log.Warnf("Token exchange error: %v", err)
 	}
 	return t.Token
 }

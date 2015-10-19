@@ -1,9 +1,9 @@
 package version
 
 var (
-	// VERSION should be updated by hand at each release
-	VERSION = "0.3.0-dev"
+	// Version should be updated by hand at each release
+	Version = "0.5.0-rc1"
 
-	// GITCOMMIT will be overwritten automatically by the build system
-	GITCOMMIT = "HEAD"
+	// GitCommit will be overwritten automatically by the build system
+	GitCommit = "HEAD"
 )

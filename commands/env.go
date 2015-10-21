@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"github.com/docker/machine/cli"
+	"github.com/docker/machine/libmachine/log"
 )
 
 const (
@@ -34,6 +35,10 @@ type ShellConfig struct {
 }
 
 func cmdEnv(c *cli.Context) {
+	// Ensure that log messages always go to stderr when this command is
+	// being run (it is intended to be run in a subshell)
+	log.SetOutWriter(os.Stderr)
+
 	if len(c.Args()) != 1 && !c.Bool("unset") {
 		fatal(improperEnvArgsError)
 	}

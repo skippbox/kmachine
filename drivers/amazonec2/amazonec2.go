@@ -37,6 +37,7 @@ const (
 var (
 	dockerPort = 2376
 	swarmPort  = 3376
+        kubernetesPort = 6443
 )
 
 type Driver struct {
@@ -649,6 +650,7 @@ func (d *Driver) configureSecurityGroupPermissions(group *amz.SecurityGroup) []a
 	hasSshPort := false
 	hasDockerPort := false
 	hasSwarmPort := false
+        hasKubernetesPort := false
 	for _, p := range group.IpPermissions {
 		switch p.FromPort {
 		case 22:
@@ -657,6 +659,8 @@ func (d *Driver) configureSecurityGroupPermissions(group *amz.SecurityGroup) []a
 			hasDockerPort = true
 		case swarmPort:
 			hasSwarmPort = true
+                case kubernetesPort:
+                        hasKubernetesPort = true
 		}
 	}
 
@@ -688,6 +692,15 @@ func (d *Driver) configureSecurityGroupPermissions(group *amz.SecurityGroup) []a
 			IpRange:    ipRange,
 		})
 	}
+
+        if !hasKubernetesPort {
+                perms = append(perms, amz.IpPermission{
+                        IpProtocol: "tcp",
+                        FromPort:   kubernetesPort,
+                        ToPort:     kubernetesPort,
+                        IpRange:    ipRange,
+                })
+        }
 
 	log.Debugf("configuring security group authorization for %s", ipRange)
 

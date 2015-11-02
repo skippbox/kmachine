@@ -438,6 +438,7 @@ func (d *Driver) vmdkPath() string {
 func (d *Driver) getIPfromDHCPLease() (string, error) {
 	var vmxfh *os.File
 	var dhcpfh *os.File
+	var dhcpfile string
 	var vmxcontent []byte
 	var dhcpcontent []byte
 	var macaddr string
@@ -448,7 +449,13 @@ func (d *Driver) getIPfromDHCPLease() (string, error) {
 	var currentleadeendtime time.Time
 
 	// DHCP lease table for NAT vmnet interface
-	var dhcpfile = "/var/db/vmware/vmnet-dhcpd-vmnet8.leases"
+	switch (runtime.GOOS) {
+	case "darwin":
+		dhcpfile = "/var/db/vmware/vmnet-dhcpd-vmnet8.leases"
+	case "linux":
+		dhcpfile = "/etc/vmware/vmnet8/dhcpd/dhcpd.leases"
+
+	}
 
 	if vmxfh, err = os.Open(d.vmxPath()); err != nil {
 		return "", err

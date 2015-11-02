@@ -460,11 +460,12 @@ func (d *Driver) Start() error {
 			return err
 		}
 
-        d.K8SPort, err = setPortForwarding(d.MachineName, 1, "k8s", "tcp", 8080, d.K8SPort)
+		d.K8SPort, err = setPortForwarding(d, 1, "k8s", "tcp", 8080, d.K8SPort)
         if err != nil {
                 return err
         }
-		if err := d.vbm("startvm", d.MachineName, "--type", "headless"); err != nil {
+
+        if err := d.vbm("startvm", d.MachineName, "--type", "headless"); err != nil {
 			return err
 		}
 		log.Infof("Starting VM...")

@@ -2,139 +2,134 @@ package google
 
 import (
 	"fmt"
-	"path/filepath"
+	"strings"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/ssh"
-	"github.com/docker/machine/state"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/ssh"
+	"github.com/docker/machine/libmachine/state"
 )
 
 // Driver is a struct compatible with the docker.hosts.drivers.Driver interface.
 type Driver struct {
-	IPAddress      string
-	MachineName    string
-	SSHUser        string
-	SSHPort        int
-	Zone           string
-	MachineType    string
-	DiskType       string
-	Scopes         string
-	DiskSize       int
-	AuthTokenPath  string
-	storePath      string
-	Project        string
-	CaCertPath     string
-	PrivateKeyPath string
-	SwarmMaster    bool
-	SwarmHost      string
-	SwarmDiscovery string
+	*drivers.BaseDriver
+	Zone          string
+	MachineType   string
+	DiskType      string
+	Address       string
+	Preemptible   bool
+	Scopes        string
+	DiskSize      int
+	AuthTokenPath string
+	Project       string
+	Tags          string
 }
 
-func init() {
-	drivers.Register("google", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+const (
+	defaultZone        = "us-central1-a"
+	defaultUser        = "docker-user"
+	defaultMachineType = "f1-micro"
+	defaultScopes      = "https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write"
+	defaultDiskType    = "pd-standard"
+	defaultDiskSize    = 10
+)
 
-// RegisterCreateFlags registers the flags this driver adds to
+// GetCreateFlags registers the flags this driver adds to
 // "docker hosts create"
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.StringFlag{
 			Name:   "google-zone",
 			Usage:  "GCE Zone",
-			Value:  "us-central1-a",
+			Value:  defaultZone,
 			EnvVar: "GOOGLE_ZONE",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-machine-type",
 			Usage:  "GCE Machine Type",
-			Value:  "f1-micro",
+			Value:  defaultMachineType,
 			EnvVar: "GOOGLE_MACHINE_TYPE",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-username",
 			Usage:  "GCE User Name",
-			Value:  "docker-user",
+			Value:  defaultUser,
 			EnvVar: "GOOGLE_USERNAME",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-project",
 			Usage:  "GCE Project",
 			EnvVar: "GOOGLE_PROJECT",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-auth-token",
 			Usage:  "GCE oAuth token",
 			EnvVar: "GOOGLE_AUTH_TOKEN",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-scopes",
 			Usage:  "GCE Scopes (comma-separated if multiple scopes)",
-			Value:  "https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write",
+			Value:  defaultScopes,
 			EnvVar: "GOOGLE_SCOPES",
 		},
-		cli.IntFlag{
+		mcnflag.IntFlag{
 			Name:   "google-disk-size",
 			Usage:  "GCE Instance Disk Size (in GB)",
-			Value:  10,
+			Value:  defaultDiskSize,
 			EnvVar: "GOOGLE_DISK_SIZE",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:   "google-disk-type",
 			Usage:  "GCE Instance Disk type",
-			Value:  "pd-standard",
+			Value:  defaultDiskType,
 			EnvVar: "GOOGLE_DISK_TYPE",
+		},
+		mcnflag.StringFlag{
+			Name:   "google-address",
+			Usage:  "GCE Instance External IP",
+			EnvVar: "GOOGLE_ADDRESS",
+		},
+		mcnflag.BoolFlag{
+			Name:   "google-preemptible",
+			Usage:  "GCE Instance Preemptibility",
+			EnvVar: "GOOGLE_PREEMPTIBLE",
+		},
+		mcnflag.StringFlag{
+			Name:   "google-tags",
+			Usage:  "GCE Instance Tags (comma-separated)",
+			EnvVar: "GOOGLE_TAGS",
+			Value:  "",
 		},
 	}
 }
 
 // NewDriver creates a Driver with the specified storePath.
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
+func NewDriver(machineName string, storePath string) *Driver {
 	return &Driver{
-		MachineName:    machineName,
-		storePath:      storePath,
-		CaCertPath:     caCert,
-		PrivateKeyPath: privateKey,
-	}, nil
+		Zone:        defaultZone,
+		DiskType:    defaultDiskType,
+		DiskSize:    defaultDiskSize,
+		MachineType: defaultMachineType,
+		Scopes:      defaultScopes,
+		BaseDriver: &drivers.BaseDriver{
+			SSHUser:     defaultUser,
+			MachineName: machineName,
+			StorePath:   storePath,
+		},
+	}
 }
 
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
-}
-
+// GetSSHHostname returns hostname for use with ssh
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
 }
 
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
-}
-
+// GetSSHUsername returns username for use with ssh
 func (d *Driver) GetSSHUsername() string {
 	if d.SSHUser == "" {
 		d.SSHUser = "docker-user"
 	}
-
 	return d.SSHUser
 }
 
@@ -149,9 +144,12 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.MachineType = flags.String("google-machine-type")
 	d.DiskSize = flags.Int("google-disk-size")
 	d.DiskType = flags.String("google-disk-type")
+	d.Address = flags.String("google-address")
+	d.Preemptible = flags.Bool("google-preemptible")
 	d.AuthTokenPath = flags.String("google-auth-token")
 	d.Project = flags.String("google-project")
 	d.Scopes = flags.String("google-scopes")
+	d.Tags = flags.String("google-tags")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 	d.SwarmDiscovery = flags.String("swarm-discovery")
@@ -167,6 +165,8 @@ func (d *Driver) initApis() (*ComputeUtil, error) {
 	return newComputeUtil(d)
 }
 
+// PreCreateCheck allows for pre-create operations to make sure a driver is ready for creation
+// It's a noop on GCE.
 func (d *Driver) PreCreateCheck() error {
 	return nil
 }
@@ -240,30 +240,52 @@ func (d *Driver) GetState() (state.State, error) {
 	return state.None, nil
 }
 
-// Start creates a GCE instance and attaches it to the existing disk.
+// Start starts an existing GCE instance or create an instance with an existing disk.
 func (d *Driver) Start() error {
 	c, err := newComputeUtil(d)
 	if err != nil {
 		return err
 	}
-	if err = c.createInstance(d); err != nil {
-		return err
+
+	instance, err := c.instance()
+	if err != nil {
+		if !strings.Contains(err.Error(), "notFound") {
+			return err
+		}
 	}
+
+	if instance == nil {
+		if err = c.createInstance(d); err != nil {
+			return err
+		}
+	} else {
+		if err := c.startInstance(); err != nil {
+			return err
+		}
+	}
+
 	d.IPAddress, err = d.GetIP()
 	return err
 }
 
-// Stop deletes the GCE instance, but keeps the disk.
+// Stop stops an existing GCE instance.
 func (d *Driver) Stop() error {
 	c, err := newComputeUtil(d)
 	if err != nil {
 		return err
 	}
-	if err = c.deleteInstance(); err != nil {
+
+	if err := c.stopInstance(); err != nil {
 		return err
 	}
+
 	d.IPAddress = ""
 	return nil
+}
+
+// Kill stops an existing GCE instance.
+func (d *Driver) Kill() error {
+	return d.Stop()
 }
 
 // Remove deletes the GCE instance and the disk.
@@ -284,20 +306,6 @@ func (d *Driver) Remove() error {
 	return c.deleteDisk()
 }
 
-// Restart deletes and recreates the GCE instance, keeping the disk.
 func (d *Driver) Restart() error {
-	c, err := newComputeUtil(d)
-	if err != nil {
-		return err
-	}
-	if err := c.deleteInstance(); err != nil {
-		return err
-	}
-
-	return c.createInstance(d)
-}
-
-// Kill deletes the GCE instance, but keeps the disk.
-func (d *Driver) Kill() error {
-	return d.Stop()
+	return nil
 }

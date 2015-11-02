@@ -3,87 +3,81 @@ package digitalocean
 import (
 	"fmt"
 	"io/ioutil"
-	"path/filepath"
 	"time"
 
 	"code.google.com/p/goauth2/oauth"
-	"github.com/codegangsta/cli"
 	"github.com/digitalocean/godo"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/ssh"
-	"github.com/docker/machine/state"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/ssh"
+	"github.com/docker/machine/libmachine/state"
 )
 
 type Driver struct {
+	*drivers.BaseDriver
 	AccessToken       string
 	DropletID         int
 	DropletName       string
 	Image             string
-	MachineName       string
-	IPAddress         string
 	Region            string
 	SSHKeyID          int
-	SSHUser           string
-	SSHPort           int
 	Size              string
 	IPv6              bool
 	Backups           bool
 	PrivateNetworking bool
-	CaCertPath        string
-	PrivateKeyPath    string
-	DriverKeyPath     string
-	SwarmMaster       bool
-	SwarmHost         string
-	SwarmDiscovery    string
-	storePath         string
 }
 
-func init() {
-	drivers.Register("digitalocean", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+const (
+	defaultImage  = "ubuntu-14-04-x64"
+	defaultRegion = "nyc3"
+	defaultSize   = "512mb"
+)
 
 // GetCreateFlags registers the flags this driver adds to
 // "docker hosts create"
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.StringFlag{
 			EnvVar: "DIGITALOCEAN_ACCESS_TOKEN",
 			Name:   "digitalocean-access-token",
 			Usage:  "Digital Ocean access token",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
+			EnvVar: "DIGITALOCEAN_SSH_USER",
+			Name:   "digitalocean-ssh-user",
+			Usage:  "Digital Ocean SSH username",
+			Value:  "root",
+		},
+		mcnflag.StringFlag{
 			EnvVar: "DIGITALOCEAN_IMAGE",
 			Name:   "digitalocean-image",
 			Usage:  "Digital Ocean Image",
-			Value:  "ubuntu-14-04-x64",
+			Value:  defaultImage,
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "DIGITALOCEAN_REGION",
 			Name:   "digitalocean-region",
 			Usage:  "Digital Ocean region",
-			Value:  "nyc3",
+			Value:  defaultRegion,
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "DIGITALOCEAN_SIZE",
 			Name:   "digitalocean-size",
 			Usage:  "Digital Ocean size",
-			Value:  "512mb",
+			Value:  defaultSize,
 		},
-		cli.BoolFlag{
+		mcnflag.BoolFlag{
 			EnvVar: "DIGITALOCEAN_IPV6",
 			Name:   "digitalocean-ipv6",
 			Usage:  "enable ipv6 for droplet",
 		},
-		cli.BoolFlag{
+		mcnflag.BoolFlag{
 			EnvVar: "DIGITALOCEAN_PRIVATE_NETWORKING",
 			Name:   "digitalocean-private-networking",
 			Usage:  "enable private networking for droplet",
 		},
-		cli.BoolFlag{
+		mcnflag.BoolFlag{
 			EnvVar: "DIGITALOCEAN_BACKUPS",
 			Name:   "digitalocean-backups",
 			Usage:  "enable backups for droplet",
@@ -91,44 +85,20 @@ func GetCreateFlags() []cli.Flag {
 	}
 }
 
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	return &Driver{MachineName: machineName, storePath: storePath, CaCertPath: caCert, PrivateKeyPath: privateKey}, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+func NewDriver(hostName, storePath string) *Driver {
+	return &Driver{
+		Image:  defaultImage,
+		Size:   defaultSize,
+		Region: defaultRegion,
+		BaseDriver: &drivers.BaseDriver{
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
-}
-
-func (d *Driver) GetSSHUsername() string {
-	if d.SSHUser == "" {
-		d.SSHUser = "root"
-	}
-
-	return d.SSHUser
 }
 
 func (d *Driver) DriverName() string {
@@ -146,7 +116,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 	d.SwarmDiscovery = flags.String("swarm-discovery")
-	d.SSHUser = "root"
+	d.SSHUser = flags.String("digitalocean-ssh-user")
 	d.SSHPort = 22
 
 	if d.AccessToken == "" {
@@ -203,6 +173,7 @@ func (d *Driver) Create() error {
 
 	d.DropletID = newDroplet.Droplet.ID
 
+	log.Info("Waiting for IP address to be assigned to the Droplet...")
 	for {
 		newDroplet, _, err = client.Droplets.Get(d.DropletID)
 		if err != nil {
@@ -229,7 +200,7 @@ func (d *Driver) Create() error {
 }
 
 func (d *Driver) createSSHKey() (*godo.Key, error) {
-	if err := ssh.GenerateSSHKey(d.sshKeyPath()); err != nil {
+	if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
 		return nil, err
 	}
 
@@ -329,10 +300,6 @@ func (d *Driver) getClient() *godo.Client {
 	return godo.NewClient(t.Client())
 }
 
-func (d *Driver) sshKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
 func (d *Driver) publicSSHKeyPath() string {
-	return d.sshKeyPath() + ".pub"
+	return d.GetSSHKeyPath() + ".pub"
 }

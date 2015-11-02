@@ -3,19 +3,16 @@ package commands
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"text/template"
 
-	"github.com/docker/machine/log"
-
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/cli"
+	"github.com/docker/machine/libmachine/log"
 )
 
 const (
-	envTmpl = `kubectl config set-cluster kmachine --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials kuser --token=abcdefghijkl{{ .Suffix2 }}kubectl config set-context kmachine --user=kuser --cluster=kmachine{{ .Suffix2 }}kubectl config use-context kmachine{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ .UsageHint }}`
+	envTmpl = `kubectl config set-cluster kmachine --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials kuser --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context kmachine --user=kuser --cluster=kmachine{{ .Suffix2 }}kubectl config use-context kmachine{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
 )
 
 var (
@@ -30,20 +27,42 @@ type ShellConfig struct {
 	DockerCertPath  string
 	DockerHost      string
 	K8sHost			string
+	K8sToken		string
 	DockerTLSVerify string
 	UsageHint       string
 	MachineName     string
+	NoProxyVar      string
+	NoProxyValue    string
 }
 
 func cmdEnv(c *cli.Context) {
+	// Ensure that log messages always go to stderr when this command is
+	// being run (it is intended to be run in a subshell)
+	log.SetOutWriter(os.Stderr)
+
 	if len(c.Args()) != 1 && !c.Bool("unset") {
-		log.Fatal(improperEnvArgsError)
+		fatal(improperEnvArgsError)
 	}
+
+	h := getFirstArgHost(c)
+
+	dockerHost, authOptions, err := runConnectionBoilerplate(h, c)
+	if err != nil {
+		fatalf("Error running connection boilerplate: %s", err)
+	}
+
+
+	mParts := strings.Split(dockerHost, "://")
+	mParts = strings.Split(mParts[1], ":")
+
+	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
+	k8sToken := h.HostOptions.KubernetesOptions.K8SToken
+
 	userShell := c.String("shell")
 	if userShell == "" {
 		shell, err := detectShell()
 		if err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 		userShell = shell
 	}
@@ -52,11 +71,44 @@ func cmdEnv(c *cli.Context) {
 
 	usageHint := generateUsageHint(c.App.Name, c.Args().First(), userShell)
 
-	shellCfg := ShellConfig{
-		DockerCertPath:  "",
-		DockerHost:      "",
-		DockerTLSVerify: "",
-		MachineName:     "",
+	shellCfg := &ShellConfig{
+		DockerCertPath:  authOptions.CertDir,
+		DockerHost:      dockerHost,
+        K8sHost:         k8sHost,
+        K8sToken:		 k8sToken,
+		DockerTLSVerify: "1",
+		UsageHint:       usageHint,
+		MachineName:     h.Name,
+	}
+
+	if c.Bool("no-proxy") {
+		ip, err := h.Driver.GetIP()
+		if err != nil {
+			fatalf("Error getting host IP: %s", err)
+		}
+
+		// first check for an existing lower case no_proxy var
+		noProxyVar := "no_proxy"
+		noProxyValue := os.Getenv("no_proxy")
+
+		// otherwise default to allcaps HTTP_PROXY
+		if noProxyValue == "" {
+			noProxyVar = "NO_PROXY"
+			noProxyValue = os.Getenv("NO_PROXY")
+		}
+
+		// add the docker host to the no_proxy list idempotently
+		switch {
+		case noProxyValue == "":
+			noProxyValue = ip
+		case strings.Contains(noProxyValue, ip):
+			//ip already in no_proxy list, nothing to do
+		default:
+			noProxyValue = fmt.Sprintf("%s,%s", noProxyValue, ip)
+		}
+
+		shellCfg.NoProxyVar = noProxyVar
+		shellCfg.NoProxyValue = noProxyValue
 	}
 
 	// unset vars
@@ -86,88 +138,13 @@ func cmdEnv(c *cli.Context) {
 
 		tmpl, err := t.Parse(envTmpl)
 		if err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 
 		if err := tmpl.Execute(os.Stdout, shellCfg); err != nil {
-			log.Fatal(err)
+			fatal(err)
 		}
 		return
-	}
-
-	cfg, err := getMachineConfig(c)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if cfg.machineUrl == "" {
-		log.Fatalf("%s is not running. Please start this with %s start %s", cfg.machineName, c.App.Name, cfg.machineName)
-	}
-
-	dockerHost := cfg.machineUrl
-	mUrl, err := url.Parse(cfg.machineUrl)
-	if err != nil {
-		log.Fatal(err)
-	}
-	mParts := strings.Split(mUrl.Host, ":")
-	k8sHost := fmt.Sprintf("https://%s:6443",mParts[0])
-
-
-	if c.Bool("swarm") {
-		if !cfg.SwarmOptions.Master {
-			log.Fatalf("%s is not a swarm master", cfg.machineName)
-		}
-		u, err := url.Parse(cfg.SwarmOptions.Host)
-		if err != nil {
-			log.Fatal(err)
-		}
-		parts := strings.Split(u.Host, ":")
-		swarmPort := parts[1]
-
-		// get IP of machine to replace in case swarm host is 0.0.0.0
-		mUrl, err := url.Parse(cfg.machineUrl)
-		if err != nil {
-			log.Fatal(err)
-		}
-		mParts := strings.Split(mUrl.Host, ":")
-		machineIp := mParts[0]
-
-		dockerHost = fmt.Sprintf("tcp://%s:%s", machineIp, swarmPort)
-	}
-
-	u, err := url.Parse(cfg.machineUrl)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if u.Scheme != "unix" {
-		// validate cert and regenerate if needed
-		valid, err := utils.ValidateCertificate(
-			u.Host,
-			cfg.caCertPath,
-			cfg.serverCertPath,
-			cfg.serverKeyPath,
-		)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if !valid {
-			log.Debugf("invalid certs detected; regenerating for %s", u.Host)
-
-			if err := runActionWithContext("configureAuth", c); err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
-
-	shellCfg = ShellConfig{
-		DockerCertPath:  cfg.machineDir,
-		DockerHost:      dockerHost,
-		K8sHost:		 k8sHost,
-		DockerTLSVerify: "1",
-		UsageHint:       usageHint,
-		MachineName:     cfg.machineName,
 	}
 
 	switch userShell {
@@ -192,11 +169,11 @@ func cmdEnv(c *cli.Context) {
 
 	tmpl, err := t.Parse(envTmpl)
 	if err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 
 	if err := tmpl.Execute(os.Stdout, shellCfg); err != nil {
-		log.Fatal(err)
+		fatal(err)
 	}
 }
 

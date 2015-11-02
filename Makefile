@@ -1,33 +1,36 @@
-.PHONY: all test validate-dco validate-gofmt validate build
-
-all: validate test build
-
-test:
-	script/test
-
-validate-dco:
-	script/validate-dco
-
-validate-gofmt:
-	script/validate-gofmt
-
-validate: validate-dco validate-gofmt
+# # Plain make targets if not requested inside a container
+ifneq (,$(findstring test-integration,$(MAKECMDGOALS)))
+	include Makefile.inc
+	include mk/main.mk
+else ifeq ($(USE_CONTAINER),)
+	include Makefile.inc
+	include mk/main.mk
+else
+# Otherwise, with docker, swallow all targets and forward into a container
+DOCKER_IMAGE_NAME := "docker-machine-build"
+DOCKER_CONTAINER_NAME := "docker-machine-build-container"
 
 build:
-	script/build
+test: build
+%:
+		docker build -t $(DOCKER_IMAGE_NAME) .
 
-# import the existing docs build cmds from docker/docker
-DOCS_MOUNT := $(if $(DOCSDIR),-v $(CURDIR)/$(DOCSDIR):/$(DOCSDIR))
-DOCSPORT := 8000
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
-DOCKER_DOCS_IMAGE := dhe-docs$(if $(GIT_BRANCH),:$(GIT_BRANCH))
-DOCKER_RUN_DOCS := docker run --rm -it $(DOCS_MOUNT) -e AWS_S3_BUCKET -e NOCACHE
+		test -z '$(shell docker ps -a | grep $(DOCKER_CONTAINER_NAME))' || docker rm -f $(DOCKER_CONTAINER_NAME)
 
-docs: docs-build
-	$(DOCKER_RUN_DOCS) -p $(if $(DOCSPORT),$(DOCSPORT):)8000 "$(DOCKER_DOCS_IMAGE)" mkdocs serve
+		docker run --name $(DOCKER_CONTAINER_NAME) \
+		    -e DEBUG \
+		    -e STATIC \
+		    -e VERBOSE \
+		    -e BUILDTAGS \
+		    -e PARALLEL \
+		    -e COVERAGE_DIR \
+		    -e TARGET_OS \
+		    -e TARGET_ARCH \
+		    -e PREFIX \
+		    $(DOCKER_IMAGE_NAME) \
+		    make $@
 
-docs-shell: docs-build
-	$(DOCKER_RUN_DOCS) -p $(if $(DOCSPORT),$(DOCSPORT):)8000 "$(DOCKER_DOCS_IMAGE)" bash
+		test ! -d bin || rm -Rf bin
+		test -z "$(findstring build,$(patsubst cross,build,$@))" || docker cp $(DOCKER_CONTAINER_NAME):/go/src/github.com/docker/machine/bin bin
 
-docs-build:
-	docker build -t "$(DOCKER_DOCS_IMAGE)" -f docs/Dockerfile .
+endif

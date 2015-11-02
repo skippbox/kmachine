@@ -6,14 +6,17 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/docker/machine/drivers"
+	"github.com/docker/machine/commands/mcndirs"
 	"github.com/docker/machine/libmachine/auth"
+	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnutils"
 	"github.com/docker/machine/libmachine/provision/pkgaction"
+	"github.com/docker/machine/libmachine/provision/serviceaction"
+	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/state"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/libmachine/kubernetes"
 )
 
 const (
@@ -49,7 +52,7 @@ type RancherProvisioner struct {
 	GenericProvisioner
 }
 
-func (provisioner *RancherProvisioner) Service(name string, action pkgaction.ServiceAction) error {
+func (provisioner *RancherProvisioner) Service(name string, action serviceaction.ServiceAction) error {
 	command := fmt.Sprintf("sudo system-docker %s %s", action.String(), name)
 
 	if _, err := provisioner.SSHCommand(command); err != nil {
@@ -85,7 +88,8 @@ func (provisioner *RancherProvisioner) Package(name string, action pkgaction.Pac
 	return nil
 }
 
-func (provisioner *RancherProvisioner) Provision(swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error {
+func (provisioner *RancherProvisioner) Provision(k8sOptions kubernetes.KubernetesOptions, swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error {
+	provisioner.KubernetesOptions = k8sOptions
 	provisioner.SwarmOptions = swarmOptions
 	provisioner.AuthOptions = authOptions
 	provisioner.EngineOptions = engineOptions
@@ -167,7 +171,7 @@ func (provisioner *RancherProvisioner) upgradeIso() error {
 		return err
 	}
 
-	if err := utils.WaitFor(drivers.MachineInState(provisioner.Driver, state.Stopped)); err != nil {
+	if err := mcnutils.WaitFor(drivers.MachineInState(provisioner.Driver, state.Stopped)); err != nil {
 		return err
 	}
 
@@ -175,7 +179,10 @@ func (provisioner *RancherProvisioner) upgradeIso() error {
 
 	log.Infof("Upgrading machine %s...", machineName)
 
-	b2dutils := utils.NewB2dUtils("", "")
+	// TODO: Ideally, we should not read from mcndirs directory at all.
+	// The driver should be able to communicate how and where to place the
+	// relevant files.
+	b2dutils := mcnutils.NewB2dUtils("", "", mcndirs.GetBaseDir())
 
 	url, err := provisioner.getLatestISOURL()
 	if err != nil {
@@ -197,7 +204,7 @@ func (provisioner *RancherProvisioner) upgradeIso() error {
 		return err
 	}
 
-	return utils.WaitFor(drivers.MachineInState(provisioner.Driver, state.Running))
+	return mcnutils.WaitFor(drivers.MachineInState(provisioner.Driver, state.Running))
 }
 
 func (provisioner *RancherProvisioner) getLatestISOURL() (string, error) {

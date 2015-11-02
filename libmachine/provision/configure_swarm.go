@@ -8,8 +8,8 @@ import (
 	"text/template"
 
 	"github.com/docker/machine/libmachine/auth"
+	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/swarm"
-	"github.com/docker/machine/log"
 )
 
 type SwarmCommandContext struct {
@@ -50,6 +50,8 @@ func configureSwarm(p Provisioner, swarmOptions swarm.SwarmOptions, authOptions 
 	if !swarmOptions.IsSwarm {
 		return nil
 	}
+
+	log.Info("Configuring swarm...")
 
 	ip, err := p.GetDriver().GetIP()
 	if err != nil {
@@ -101,7 +103,7 @@ manage \
 --restart=always \
 --name swarm-agent \
 {{.SwarmImage}} \
-join --addr {{.Ip}}:{{.DockerPort}} {{.SwarmOptions.Discovery}}
+join --advertise {{.Ip}}:{{.DockerPort}} {{.SwarmOptions.Discovery}}
 `
 
 	if swarmOptions.Master {

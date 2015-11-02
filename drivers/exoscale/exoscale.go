@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/state"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/mcnutils"
+	"github.com/docker/machine/libmachine/state"
 	"github.com/pyr/egoscale/src/egoscale"
 )
 
 type Driver struct {
+	*drivers.BaseDriver
 	URL              string
 	ApiKey           string
 	ApiSecretKey     string
@@ -26,105 +26,85 @@ type Driver struct {
 	Image            string
 	SecurityGroup    string
 	AvailabilityZone string
-	MachineName      string
 	KeyPair          string
-	IPAddress        string
 	PublicKey        string
 	Id               string
-	CaCertPath       string
-	PrivateKeyPath   string
-	DriverKeyPath    string
-	SwarmMaster      bool
-	SwarmHost        string
-	SwarmDiscovery   string
-	storePath        string
 }
 
-func init() {
-	drivers.Register("exoscale", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+const (
+	defaultInstanceProfile  = "small"
+	defaultDiskSize         = 50
+	defaultImage            = "ubuntu-14.04"
+	defaultAvailabilityZone = "ch-gva-2"
+)
 
 // RegisterCreateFlags registers the flags this driver adds to
 // "docker hosts create"
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.StringFlag{
 			EnvVar: "EXOSCALE_ENDPOINT",
 			Name:   "exoscale-url",
 			Usage:  "exoscale API endpoint",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "EXOSCALE_API_KEY",
 			Name:   "exoscale-api-key",
 			Usage:  "exoscale API key",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "EXOSCALE_API_SECRET",
 			Name:   "exoscale-api-secret-key",
 			Usage:  "exoscale API secret key",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "EXOSCALE_INSTANCE_PROFILE",
 			Name:   "exoscale-instance-profile",
-			Value:  "small",
+			Value:  defaultInstanceProfile,
 			Usage:  "exoscale instance profile (small, medium, large, ...)",
 		},
-		cli.IntFlag{
+		mcnflag.IntFlag{
 			EnvVar: "EXOSCALE_DISK_SIZE",
 			Name:   "exoscale-disk-size",
-			Value:  50,
+			Value:  defaultDiskSize,
 			Usage:  "exoscale disk size (10, 50, 100, 200, 400)",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "EXSOCALE_IMAGE",
 			Name:   "exoscale-image",
-			Value:  "ubuntu-14.04",
+			Value:  defaultImage,
 			Usage:  "exoscale image template",
 		},
-		cli.StringFlag{
+		mcnflag.StringSliceFlag{
 			EnvVar: "EXOSCALE_SECURITY_GROUP",
 			Name:   "exoscale-security-group",
-			Value:  "docker-machine",
+			Value:  []string{},
 			Usage:  "exoscale security group",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "EXOSCALE_AVAILABILITY_ZONE",
 			Name:   "exoscale-availability-zone",
-			Value:  "ch-gva-2",
+			Value:  defaultAvailabilityZone,
 			Usage:  "exoscale availibility zone",
 		},
 	}
 }
 
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	return &Driver{MachineName: machineName, storePath: storePath, CaCertPath: caCert, PrivateKeyPath: privateKey}, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+func NewDriver(hostName, storePath string) drivers.Driver {
+	return &Driver{
+		InstanceProfile:  defaultInstanceProfile,
+		DiskSize:         defaultDiskSize,
+		Image:            defaultImage,
+		AvailabilityZone: defaultAvailabilityZone,
+		BaseDriver: &drivers.BaseDriver{
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	return 22, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
@@ -142,7 +122,11 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.InstanceProfile = flags.String("exoscale-instance-profile")
 	d.DiskSize = flags.Int("exoscale-disk-size")
 	d.Image = flags.String("exoscale-image")
-	d.SecurityGroup = flags.String("exoscale-security-group")
+	securityGroups := flags.StringSlice("exoscale-security-group")
+	if len(securityGroups) == 0 {
+		securityGroups = []string{"docker-machine"}
+	}
+	d.SecurityGroup = strings.Join(securityGroups, ",")
 	d.AvailabilityZone = flags.String("exoscale-availability-zone")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
@@ -208,6 +192,45 @@ func (d *Driver) PreCreateCheck() error {
 	return nil
 }
 
+func (d *Driver) createDefaultSecurityGroup(client *egoscale.Client, group string) (string, error) {
+	rules := []egoscale.SecurityGroupRule{
+		{
+			SecurityGroupId: "",
+			Cidr:            "0.0.0.0/0",
+			Protocol:        "TCP",
+			Port:            22,
+		},
+		{
+			SecurityGroupId: "",
+			Cidr:            "0.0.0.0/0",
+			Protocol:        "TCP",
+			Port:            2376,
+		},
+		{
+			SecurityGroupId: "",
+			Cidr:            "0.0.0.0/0",
+			Protocol:        "TCP",
+			Port:            3376,
+		},
+		{
+			SecurityGroupId: "",
+			Cidr:            "0.0.0.0/0",
+			Protocol:        "ICMP",
+			IcmpType:        8,
+			IcmpCode:        0,
+		},
+	}
+	sgresp, err := client.CreateSecurityGroupWithRules(
+		group,
+		rules,
+		make([]egoscale.SecurityGroupRule, 0, 0))
+	if err != nil {
+		return "", err
+	}
+	sg := sgresp.Id
+	return sg, nil
+}
+
 func (d *Driver) Create() error {
 	log.Infof("Querying exoscale for the requested parameters...")
 	client := egoscale.NewClient(d.URL, d.ApiKey, d.ApiSecretKey)
@@ -244,53 +267,22 @@ func (d *Driver) Create() error {
 	}
 	log.Debugf("Profile %v = %s", d.InstanceProfile, profile)
 
-	// Security group
-	sg, ok := topology.SecurityGroups[d.SecurityGroup]
-	if !ok {
-		log.Infof("Security group %v does not exist, create it",
-			d.SecurityGroup)
-		rules := []egoscale.SecurityGroupRule{
-			{
-				SecurityGroupId: "",
-				Cidr:            "0.0.0.0/0",
-				Protocol:        "TCP",
-				Port:            22,
-			},
-			{
-				SecurityGroupId: "",
-				Cidr:            "0.0.0.0/0",
-				Protocol:        "TCP",
-				Port:            2376,
-			},
-			{
-				SecurityGroupId: "",
-				Cidr:            "0.0.0.0/0",
-				Protocol:        "TCP",
-				Port:            3376,
-			},
-			{
-				SecurityGroupId: "",
-				Cidr:            "0.0.0.0/0",
-				Protocol:        "TCP",
-				Port:            6443,
-			},
-			{
-				SecurityGroupId: "",
-				Cidr:            "0.0.0.0/0",
-				Protocol:        "ICMP",
-				IcmpType:        8,
-				IcmpCode:        0,
-			},
+	// Security groups
+	securityGroups := strings.Split(d.SecurityGroup, ",")
+	sgs := make([]string, len(securityGroups))
+	for idx, group := range securityGroups {
+		sg, ok := topology.SecurityGroups[group]
+		if !ok {
+			log.Infof("Security group %v does not exist, create it",
+				group)
+			sg, err = d.createDefaultSecurityGroup(client, group)
+			if err != nil {
+				return err
+			}
 		}
-		sgresp, err := client.CreateSecurityGroupWithRules(d.SecurityGroup,
-			rules,
-			make([]egoscale.SecurityGroupRule, 0, 0))
-		if err != nil {
-			return err
-		}
-		sg = sgresp.Id
+		log.Debugf("Security group %v = %s", group, sg)
+		sgs[idx] = sg
 	}
-	log.Debugf("Security group %v = %s", d.SecurityGroup, sg)
 
 	log.Infof("Generate an SSH keypair...")
 	keypairName := fmt.Sprintf("docker-machine-%s", d.MachineName)
@@ -316,7 +308,7 @@ func (d *Driver) Create() error {
 	machineProfile := egoscale.MachineProfile{
 		Template:        tpl,
 		ServiceOffering: profile,
-		SecurityGroups:  []string{sg},
+		SecurityGroups:  sgs,
 		Userdata:        userdata,
 		Zone:            zone,
 		Keypair:         d.KeyPair,
@@ -442,7 +434,7 @@ func (d *Driver) jobIsDone(client *egoscale.Client, jobid string) (bool, error) 
 
 func (d *Driver) waitForJob(client *egoscale.Client, jobid string) error {
 	log.Infof("Waiting for job to complete...")
-	return utils.WaitForSpecificOrError(func() (bool, error) {
+	return mcnutils.WaitForSpecificOrError(func() (bool, error) {
 		return d.jobIsDone(client, jobid)
 	}, 60, 2*time.Second)
 }

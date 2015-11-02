@@ -7,105 +7,72 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/state"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/mcnutils"
+	"github.com/docker/machine/libmachine/state"
 )
 
 type Driver struct {
-	MachineName    string
-	IPAddress      string
-	SSHKey         string
-	SSHUser        string
-	SSHPort        int
-	CaCertPath     string
-	PrivateKeyPath string
-	DriverKeyPath  string
-	SwarmMaster    bool
-	SwarmHost      string
-	SwarmDiscovery string
-	storePath      string
+	*drivers.BaseDriver
+	SSHKey string
 }
 
 const (
+	defaultSSHUser = "root"
+	defaultSSHPort = 22
 	defaultTimeout = 1 * time.Second
 )
 
-func init() {
-	drivers.Register("generic", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+var (
+	defaultSSHKey = filepath.Join(mcnutils.GetHomeDir(), ".ssh", "id_rsa")
+)
 
 // GetCreateFlags registers the flags this driver adds to
 // "docker hosts create"
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.StringFlag{
 			Name:  "generic-ip-address",
 			Usage: "IP Address of machine",
-			Value: "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:  "generic-ssh-user",
 			Usage: "SSH user",
-			Value: "root",
+			Value: defaultSSHUser,
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			Name:  "generic-ssh-key",
 			Usage: "SSH private key path",
-			Value: filepath.Join(utils.GetHomeDir(), ".ssh", "id_rsa"),
+			Value: defaultSSHKey,
 		},
-		cli.IntFlag{
+		mcnflag.IntFlag{
 			Name:  "generic-ssh-port",
 			Usage: "SSH port",
-			Value: 22,
+			Value: defaultSSHPort,
 		},
 	}
 }
 
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
+func NewDriver(hostName, storePath string) drivers.Driver {
 	return &Driver{
-		MachineName:    machineName,
-		storePath:      storePath,
-		CaCertPath:     caCert,
-		PrivateKeyPath: privateKey,
-	}, nil
+		SSHKey: defaultSSHKey,
+		BaseDriver: &drivers.BaseDriver{
+			SSHUser:     defaultSSHUser,
+			SSHPort:     defaultSSHPort,
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
 }
 
 func (d *Driver) DriverName() string {
 	return "generic"
 }
 
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
-}
-
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
 }
 
 func (d *Driver) GetSSHUsername() string {
@@ -136,11 +103,11 @@ func (d *Driver) PreCreateCheck() error {
 func (d *Driver) Create() error {
 	log.Infof("Importing SSH key...")
 
-	if err := utils.CopyFile(d.SSHKey, d.sshKeyPath()); err != nil {
+	if err := mcnutils.CopyFile(d.SSHKey, d.GetSSHKeyPath()); err != nil {
 		return fmt.Errorf("unable to copy ssh key: %s", err)
 	}
 
-	if err := os.Chmod(d.sshKeyPath(), 0600); err != nil {
+	if err := os.Chmod(d.GetSSHKeyPath(), 0600); err != nil {
 		return err
 	}
 
@@ -208,10 +175,6 @@ func (d *Driver) Kill() error {
 	return nil
 }
 
-func (d *Driver) sshKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
 func (d *Driver) publicSSHKeyPath() string {
-	return d.sshKeyPath() + ".pub"
+	return d.GetSSHKeyPath() + ".pub"
 }

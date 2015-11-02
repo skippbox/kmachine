@@ -3,12 +3,14 @@ package provision
 import (
 	"fmt"
 
-	"github.com/docker/machine/drivers"
 	"github.com/docker/machine/libmachine/auth"
+	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
+	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/provision/pkgaction"
+	"github.com/docker/machine/libmachine/provision/serviceaction"
 	"github.com/docker/machine/libmachine/swarm"
-	"github.com/docker/machine/log"
+	"github.com/docker/machine/libmachine/kubernetes"
 )
 
 var provisioners = make(map[string]*RegisteredProvisioner)
@@ -20,6 +22,9 @@ type Provisioner interface {
 
 	// Create Kubernetes Manifest file (return struct of content and path)
 	Generatek8sOptions() (*k8sOptions, error)
+
+	// Retrieve the Kubernetes configuration settings
+	GetKubernetesOptions() kubernetes.KubernetesOptions
 
 	// Get the directory where the settings files for docker are to be found
 	GetDockerOptionsDir() string
@@ -45,10 +50,10 @@ type Provisioner interface {
 	//     3. Configure the daemon to accept connections over TLS.
 	//     4. Copy the needed certificates to the server and local config dir.
 	//     5. Configure / activate swarm if applicable.
-	Provision(swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error
+	Provision(k8sOptions kubernetes.KubernetesOptions, swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error
 
 	// Perform action on a named service e.g. stop
-	Service(name string, action pkgaction.ServiceAction) error
+	Service(name string, action serviceaction.ServiceAction) error
 
 	// Get the driver which is contained in the provisioner.
 	GetDriver() drivers.Driver
@@ -59,6 +64,9 @@ type Provisioner interface {
 	// Set the OS Release info depending on how it's represented
 	// internally
 	SetOsReleaseInfo(info *OsRelease)
+
+	// Get the OS Release info for the current provisioner
+	GetOsReleaseInfo() (*OsRelease, error)
 }
 
 // Detection

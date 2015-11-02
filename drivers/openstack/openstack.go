@@ -3,20 +3,21 @@ package openstack
 import (
 	"fmt"
 	"io/ioutil"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/codegangsta/cli"
-	"github.com/docker/machine/drivers"
-	"github.com/docker/machine/log"
-	"github.com/docker/machine/ssh"
-	"github.com/docker/machine/state"
-	"github.com/docker/machine/utils"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/log"
+	"github.com/docker/machine/libmachine/mcnflag"
+	"github.com/docker/machine/libmachine/mcnutils"
+	"github.com/docker/machine/libmachine/ssh"
+	"github.com/docker/machine/libmachine/state"
 )
 
 type Driver struct {
+	*drivers.BaseDriver
 	AuthUrl          string
+	ActiveTimeout    int
 	Insecure         bool
 	DomainID         string
 	DomainName       string
@@ -27,7 +28,6 @@ type Driver struct {
 	Region           string
 	AvailabilityZone string
 	EndpointType     string
-	MachineName      string
 	MachineId        string
 	FlavorName       string
 	FlavorId         string
@@ -39,199 +39,187 @@ type Driver struct {
 	SecurityGroups   []string
 	FloatingIpPool   string
 	FloatingIpPoolId string
-	SSHUser          string
-	SSHPort          int
-	IPAddress        string
-	CaCertPath       string
-	PrivateKeyPath   string
-	storePath        string
-	SwarmMaster      bool
-	SwarmHost        string
-	SwarmDiscovery   string
+	IpVersion        int
 	client           Client
 }
 
-func init() {
-	drivers.Register("openstack", &drivers.RegisteredDriver{
-		New:            NewDriver,
-		GetCreateFlags: GetCreateFlags,
-	})
-}
+const (
+	defaultSSHUser       = "root"
+	defaultSSHPort       = 22
+	defaultActiveTimeout = 200
+)
 
-func GetCreateFlags() []cli.Flag {
-	return []cli.Flag{
-		cli.StringFlag{
+func (d *Driver) GetCreateFlags() []mcnflag.Flag {
+	return []mcnflag.Flag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_AUTH_URL",
 			Name:   "openstack-auth-url",
 			Usage:  "OpenStack authentication URL",
 			Value:  "",
 		},
-		cli.BoolFlag{
-			Name:  "openstack-insecure",
-			Usage: "Disable TLS credential checking.",
+		mcnflag.BoolFlag{
+			EnvVar: "OS_INSECURE",
+			Name:   "openstack-insecure",
+			Usage:  "Disable TLS credential checking.",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_DOMAIN_ID",
 			Name:   "openstack-domain-id",
 			Usage:  "OpenStack domain ID (identity v3 only)",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_DOMAIN_NAME",
 			Name:   "openstack-domain-name",
 			Usage:  "OpenStack domain name (identity v3 only)",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_USERNAME",
 			Name:   "openstack-username",
 			Usage:  "OpenStack username",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_PASSWORD",
 			Name:   "openstack-password",
 			Usage:  "OpenStack password",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_TENANT_NAME",
 			Name:   "openstack-tenant-name",
 			Usage:  "OpenStack tenant name",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_TENANT_ID",
 			Name:   "openstack-tenant-id",
 			Usage:  "OpenStack tenant id",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_REGION_NAME",
 			Name:   "openstack-region",
 			Usage:  "OpenStack region name",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_AVAILABILITY_ZONE",
 			Name:   "openstack-availability-zone",
 			Usage:  "OpenStack availability zone",
 			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.StringFlag{
 			EnvVar: "OS_ENDPOINT_TYPE",
 			Name:   "openstack-endpoint-type",
 			Usage:  "OpenStack endpoint type (adminURL, internalURL or publicURL)",
 			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-flavor-id",
-			Usage: "OpenStack flavor id to use for the instance",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_FLAVOR_ID",
+			Name:   "openstack-flavor-id",
+			Usage:  "OpenStack flavor id to use for the instance",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-flavor-name",
-			Usage: "OpenStack flavor name to use for the instance",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_FLAVOR_NAME",
+			Name:   "openstack-flavor-name",
+			Usage:  "OpenStack flavor name to use for the instance",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-image-id",
-			Usage: "OpenStack image id to use for the instance",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_IMAGE_ID",
+			Name:   "openstack-image-id",
+			Usage:  "OpenStack image id to use for the instance",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-image-name",
-			Usage: "OpenStack image name to use for the instance",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_IMAGE_NAME",
+			Name:   "openstack-image-name",
+			Usage:  "OpenStack image name to use for the instance",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-net-id",
-			Usage: "OpenStack network id the machine will be connected on",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_NETWORK_ID",
+			Name:   "openstack-net-id",
+			Usage:  "OpenStack network id the machine will be connected on",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-net-name",
-			Usage: "OpenStack network name the machine will be connected on",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_NETWORK_NAME",
+			Name:   "openstack-net-name",
+			Usage:  "OpenStack network name the machine will be connected on",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-sec-groups",
-			Usage: "OpenStack comma separated security groups for the machine",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_SECURITY_GROUPS",
+			Name:   "openstack-sec-groups",
+			Usage:  "OpenStack comma separated security groups for the machine",
+			Value:  "",
 		},
-		cli.StringFlag{
-			Name:  "openstack-floatingip-pool",
-			Usage: "OpenStack floating IP pool to get an IP from to assign to the instance",
-			Value: "",
+		mcnflag.StringFlag{
+			EnvVar: "OS_FLOATINGIP_POOL",
+			Name:   "openstack-floatingip-pool",
+			Usage:  "OpenStack floating IP pool to get an IP from to assign to the instance",
+			Value:  "",
 		},
-		cli.StringFlag{
+		mcnflag.IntFlag{
+			EnvVar: "OS_IP_VERSION",
+			Name:   "openstack-ip-version",
+			Usage:  "OpenStack version of IP address assigned for the machine",
+			Value:  4,
+		},
+		mcnflag.StringFlag{
+			EnvVar: "OS_SSH_USER",
+			Name:   "openstack-ssh-user",
+			Usage:  "OpenStack SSH user",
+			Value:  defaultSSHUser,
+		},
+		mcnflag.IntFlag{
+			EnvVar: "OS_SSH_PORT",
+			Name:   "openstack-ssh-port",
+			Usage:  "OpenStack SSH port",
+			Value:  defaultSSHPort,
+		},
+		mcnflag.StringFlag{
 			Name:  "openstack-ssh-user",
 			Usage: "OpenStack SSH user",
-			Value: "root",
+			Value: defaultSSHUser,
 		},
-		cli.IntFlag{
+		mcnflag.IntFlag{
 			Name:  "openstack-ssh-port",
 			Usage: "OpenStack SSH port",
-			Value: 22,
+			Value: defaultSSHPort,
+		},
+		mcnflag.IntFlag{
+			EnvVar: "OS_ACTIVE_TIMEOUT",
+			Name:   "openstack-active-timeout",
+			Usage:  "OpenStack active timeout",
+			Value:  defaultActiveTimeout,
 		},
 	}
 }
 
-func NewDriver(machineName string, storePath string, caCert string, privateKey string) (drivers.Driver, error) {
-	log.WithFields(log.Fields{
-		"machineName": machineName,
-		"storePath":   storePath,
-		"caCert":      caCert,
-		"privateKey":  privateKey,
-	}).Debug("Instantiating OpenStack driver...")
-
-	return NewDerivedDriver(machineName, storePath, &GenericClient{}, caCert, privateKey)
+func NewDriver(hostName, storePath string) drivers.Driver {
+	return NewDerivedDriver(hostName, storePath)
 }
 
-func NewDerivedDriver(machineName string, storePath string, client Client, caCert string, privateKey string) (*Driver, error) {
+func NewDerivedDriver(hostName, storePath string) *Driver {
 	return &Driver{
-		MachineName:    machineName,
-		storePath:      storePath,
-		client:         client,
-		CaCertPath:     caCert,
-		PrivateKeyPath: privateKey,
-	}, nil
-}
-
-func (d *Driver) AuthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) DeauthorizePort(ports []*drivers.Port) error {
-	return nil
-}
-
-func (d *Driver) GetMachineName() string {
-	return d.MachineName
+		client:        &GenericClient{},
+		ActiveTimeout: defaultActiveTimeout,
+		BaseDriver: &drivers.BaseDriver{
+			SSHUser:     defaultSSHUser,
+			SSHPort:     defaultSSHPort,
+			MachineName: hostName,
+			StorePath:   storePath,
+		},
+	}
 }
 
 func (d *Driver) GetSSHHostname() (string, error) {
 	return d.GetIP()
-}
-
-func (d *Driver) GetSSHKeyPath() string {
-	return filepath.Join(d.storePath, "id_rsa")
-}
-
-func (d *Driver) GetSSHPort() (int, error) {
-	if d.SSHPort == 0 {
-		d.SSHPort = 22
-	}
-
-	return d.SSHPort, nil
-}
-
-func (d *Driver) GetSSHUsername() string {
-	if d.SSHUser == "" {
-		d.SSHUser = "root"
-	}
-
-	return d.SSHUser
 }
 
 func (d *Driver) DriverName() string {
@@ -240,6 +228,7 @@ func (d *Driver) DriverName() string {
 
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.AuthUrl = flags.String("openstack-auth-url")
+	d.ActiveTimeout = flags.Int("openstack-active-timeout")
 	d.Insecure = flags.Bool("openstack-insecure")
 	d.DomainID = flags.String("openstack-domain-id")
 	d.DomainName = flags.String("openstack-domain-name")
@@ -260,6 +249,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 		d.SecurityGroups = strings.Split(flags.String("openstack-sec-groups"), ",")
 	}
 	d.FloatingIpPool = flags.String("openstack-floatingip-pool")
+	d.IpVersion = flags.Int("openstack-ip-version")
 	d.SSHUser = flags.String("openstack-ssh-user")
 	d.SSHPort = flags.Int("openstack-ssh-port")
 	d.SwarmMaster = flags.Bool("swarm-master")
@@ -303,7 +293,7 @@ func (d *Driver) GetIP() (string, error) {
 			return "", err
 		}
 		for _, a := range addresses {
-			if a.AddressType == addressType {
+			if a.AddressType == addressType && a.Version == d.IpVersion {
 				return a.Address, nil
 			}
 		}
@@ -350,7 +340,7 @@ func (d *Driver) PreCreateCheck() error {
 }
 
 func (d *Driver) Create() error {
-	d.KeyPairName = fmt.Sprintf("%s-%s", d.MachineName, utils.GenerateRandomID())
+	d.KeyPairName = fmt.Sprintf("%s-%s", d.MachineName, mcnutils.GenerateRandomID())
 
 	if err := d.resolveIds(); err != nil {
 		return err

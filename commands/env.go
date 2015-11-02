@@ -56,7 +56,6 @@ func cmdEnv(c *cli.Context) {
 	mParts = strings.Split(mParts[1], ":")
 
 	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
-	// CAB: This needs to be replaced with a randomizer
 	k8sToken := h.HostOptions.KubernetesOptions.K8SToken
 
 	userShell := c.String("shell")

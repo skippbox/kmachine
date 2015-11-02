@@ -292,8 +292,9 @@ func (provisioner *Boot2DockerProvisioner) Provision(k8sOptions kubernetes.Kuber
 		return err
 	}
 
-	// CAB: Add configuration for kubernetes
-
+	if err = configureKubernetes(provisioner, provisioner.KubernetesOptions, authOptions); err != nil {
+		return err
+	}
 	return nil
 }
 

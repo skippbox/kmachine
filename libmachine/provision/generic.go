@@ -9,6 +9,7 @@ import (
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
 	"github.com/docker/machine/libmachine/swarm"
+    "github.com/docker/machine/libmachine/kubernetes"
 )
 
 type GenericProvisioner struct {
@@ -22,6 +23,7 @@ type GenericProvisioner struct {
 	AuthOptions       auth.AuthOptions
 	EngineOptions     engine.EngineOptions
 	SwarmOptions      swarm.SwarmOptions
+    KubernetesOptions kubernetes.KubernetesOptions
 }
 
 func (provisioner *GenericProvisioner) Hostname() (string, error) {
@@ -69,6 +71,11 @@ func (provisioner *GenericProvisioner) SetOsReleaseInfo(info *OsRelease) {
 	provisioner.OsReleaseInfo = info
 }
 
+func (provisioner *GenericProvisioner) GetKubernetesOptions() kubernetes.KubernetesOptions {
+    return provisioner.KubernetesOptions
+}
+
+// CAB: Determine if this is where the certs should be specified
 func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error) {
 	var (
 		k8sCfg bytes.Buffer

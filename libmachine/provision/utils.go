@@ -206,7 +206,6 @@ func installk8sGeneric(p Provisioner) error {
 	//if output, err := p.SSHCommand("docker pull kubernetes/etcd"); err != nil {
 	//	return fmt.Errorf("error installing k8s: %s\n", output)
 	//}
-
 	k8scfg, err := p.Generatek8sOptions()
 	if err != nil {
 			return err
@@ -216,7 +215,7 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s\" | sudo tee %s", "abcdefghijkl,machine,1000", "/tmp/tokenfile.txt")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "machine,1000", "/tmp/tokenfile.txt")); err != nil {
 		return err
 	}
 

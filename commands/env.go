@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	envTmpl = `kubectl config set-cluster kmachine --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials kuser --token=abcdefghijkl{{ .Suffix2 }}kubectl config set-context kmachine --user=kuser --cluster=kmachine{{ .Suffix2 }}kubectl config use-context kmachine{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
+	envTmpl = `kubectl config set-cluster kmachine --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials kuser --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context kmachine --user=kuser --cluster=kmachine{{ .Suffix2 }}kubectl config use-context kmachine{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
 )
 
 var (
@@ -27,6 +27,7 @@ type ShellConfig struct {
 	DockerCertPath  string
 	DockerHost      string
 	K8sHost			string
+	K8sToken		string
 	DockerTLSVerify string
 	UsageHint       string
 	MachineName     string
@@ -50,9 +51,13 @@ func cmdEnv(c *cli.Context) {
 		fatalf("Error running connection boilerplate: %s", err)
 	}
 
+
 	mParts := strings.Split(dockerHost, "://")
 	mParts = strings.Split(mParts[1], ":")
+
 	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
+	// CAB: This needs to be replaced with a randomizer
+	k8sToken := h.HostOptions.KubernetesOptions.K8SToken
 
 	userShell := c.String("shell")
 	if userShell == "" {
@@ -71,6 +76,7 @@ func cmdEnv(c *cli.Context) {
 		DockerCertPath:  authOptions.CertDir,
 		DockerHost:      dockerHost,
         K8sHost:         k8sHost,
+        K8sToken:		 k8sToken,
 		DockerTLSVerify: "1",
 		UsageHint:       usageHint,
 		MachineName:     h.Name,

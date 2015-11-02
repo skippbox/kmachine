@@ -18,6 +18,7 @@ import (
 	"github.com/docker/machine/libmachine/provision/serviceaction"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
+	"github.com/docker/machine/libmachine/kubernetes"
 )
 
 func init() {
@@ -38,6 +39,7 @@ type Boot2DockerProvisioner struct {
 	AuthOptions   auth.AuthOptions
 	EngineOptions engine.EngineOptions
 	SwarmOptions  swarm.SwarmOptions
+	KubernetesOptions kubernetes.KubernetesOptions
 }
 
 func (provisioner *Boot2DockerProvisioner) Service(name string, action serviceaction.ServiceAction) error {
@@ -125,6 +127,11 @@ func (provisioner *Boot2DockerProvisioner) GetAuthOptions() auth.AuthOptions {
 	return provisioner.AuthOptions
 }
 
+func (provisioner *Boot2DockerProvisioner) GetKubernetesOptions() kubernetes.KubernetesOptions {
+    return provisioner.KubernetesOptions
+}
+
+// CAB: Investigate how much additional work would be needed to integrate options here
 func (provisioner *Boot2DockerProvisioner) Generatek8sOptions() (*k8sOptions, error) {
 	var (
 		k8sCfg bytes.Buffer
@@ -237,7 +244,7 @@ You also might want to clear any VirtualBox host only interfaces you are not usi
 	}
 }
 
-func (provisioner *Boot2DockerProvisioner) Provision(swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error {
+func (provisioner *Boot2DockerProvisioner) Provision(k8sOptions kubernetes.KubernetesOptions, swarmOptions swarm.SwarmOptions, authOptions auth.AuthOptions, engineOptions engine.EngineOptions) error {
 	const (
 		dockerPort = 2376
 	)
@@ -255,6 +262,7 @@ func (provisioner *Boot2DockerProvisioner) Provision(swarmOptions swarm.SwarmOpt
 	provisioner.SwarmOptions = swarmOptions
 	provisioner.AuthOptions = authOptions
 	provisioner.EngineOptions = engineOptions
+	provisioner.KubernetesOptions = k8sOptions
 
 	if provisioner.EngineOptions.StorageDriver == "" {
 		provisioner.EngineOptions.StorageDriver = "aufs"
@@ -283,6 +291,8 @@ func (provisioner *Boot2DockerProvisioner) Provision(swarmOptions swarm.SwarmOpt
 	if err = configureSwarm(provisioner, swarmOptions, provisioner.AuthOptions); err != nil {
 		return err
 	}
+
+	// CAB: Add configuration for kubernetes
 
 	return nil
 }

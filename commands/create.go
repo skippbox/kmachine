@@ -23,6 +23,7 @@ import (
 	"github.com/docker/machine/libmachine/mcnflag"
 	"github.com/docker/machine/libmachine/persist"
 	"github.com/docker/machine/libmachine/swarm"
+	"github.com/docker/machine/libmachine/kubernetes"
 )
 
 var (
@@ -108,6 +109,11 @@ var (
 			Usage: "addr to advertise for Swarm (default: detect and use the machine IP)",
 			Value: "",
 		},
+		cli.StringFlag{
+			Name: "k8s-token",
+			Usage: "token to pass for authentication with kubernetes",
+			Value: "",
+		},
 	}
 )
 
@@ -161,6 +167,11 @@ func cmdCreateInner(c *cli.Context) {
 		fatalf("Error getting new host: %s", err)
 	}
 
+	k8sToken := c.String("k8s-token")
+	if k8sToken == "" {
+		k8sToken = kubernetes.GenerateRandomToken(12)
+	}
+
 	h.HostOptions = &host.HostOptions{
 		AuthOptions: &auth.AuthOptions{
 			CertDir:          mcndirs.GetMachineCertDir(),
@@ -191,6 +202,9 @@ func cmdCreateInner(c *cli.Context) {
 			Host:           c.String("swarm-host"),
 			Strategy:       c.String("swarm-strategy"),
 			ArbitraryFlags: c.StringSlice("swarm-opt"),
+		},
+		KubernetesOptions: &kubernetes.KubernetesOptions {
+			K8SToken:		k8sToken,
 		},
 	}
 

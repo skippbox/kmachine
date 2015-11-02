@@ -70,7 +70,7 @@ func Create(store persist.Store, h *host.Host) error {
 		}
 
 		log.Info("Provisioning created instance...")
-		if err := provisioner.Provision(*h.HostOptions.SwarmOptions, *h.HostOptions.AuthOptions, *h.HostOptions.EngineOptions); err != nil {
+		if err := provisioner.Provision(*h.HostOptions.KubernetesOptions, *h.HostOptions.SwarmOptions, *h.HostOptions.AuthOptions, *h.HostOptions.EngineOptions); err != nil {
 			return fmt.Errorf("Error running provisioning: %s", err)
 		}
 	}

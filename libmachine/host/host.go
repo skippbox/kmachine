@@ -16,6 +16,7 @@ import (
 	"github.com/docker/machine/libmachine/ssh"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
+	"github.com/docker/machine/libmachine/kubernetes"
 )
 
 var (
@@ -34,12 +35,13 @@ type Host struct {
 }
 
 type HostOptions struct {
-	Driver        string
-	Memory        int
-	Disk          int
-	EngineOptions *engine.EngineOptions
-	SwarmOptions  *swarm.SwarmOptions
-	AuthOptions   *auth.AuthOptions
+	Driver        		string
+	Memory        		int
+	Disk          		int
+	EngineOptions 		*engine.EngineOptions
+	SwarmOptions  		*swarm.SwarmOptions
+	AuthOptions   		*auth.AuthOptions
+	KubernetesOptions	*kubernetes.KubernetesOptions
 }
 
 type HostMetadata struct {
@@ -160,7 +162,7 @@ func (h *Host) ConfigureAuth() error {
 	// and modularity of the provisioners should be).
 	//
 	// Call provision to re-provision the certs properly.
-	if err := provisioner.Provision(swarm.SwarmOptions{}, *h.HostOptions.AuthOptions, *h.HostOptions.EngineOptions); err != nil {
+	if err := provisioner.Provision(*h.HostOptions.KubernetesOptions, swarm.SwarmOptions{}, *h.HostOptions.AuthOptions, *h.HostOptions.EngineOptions); err != nil {
 		return err
 	}
 

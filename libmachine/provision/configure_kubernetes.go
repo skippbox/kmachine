@@ -20,7 +20,7 @@ func configureKubernetes(p Provisioner, k8sOptions kubernetes.KubernetesOptions,
         return err
     }
 
-    if _, err := p.SSHCommand("sudo /etc/rc.d/k8s.sh"); err != nil {
+    if _, err := p.SSHCommand("sudo /bin/sh /etc/rc.d/k8s.sh"); err != nil {
         return err
     }
 

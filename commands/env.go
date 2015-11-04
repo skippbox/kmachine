@@ -61,7 +61,7 @@ func cmdEnv(c *cli.Context) error {
 	mParts = strings.Split(mParts[1], ":")
 
 	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
-	k8sToken := h.HostOptions.KubernetesOptions.K8SToken
+	k8sToken := host.HostOptions.KubernetesOptions.K8SToken
 
 	userShell := c.String("shell")
 	if userShell == "" {

@@ -176,7 +176,7 @@ func cmdCreateInner(c *cli.Context) error {
 
 	k8sToken := c.String("k8s-token")
 	if k8sToken == "" {
-		k8sToken = kubernetes.GenerateRandomToken(12)
+		k8sToken = kubernetes.GenerateRandomToken(32)
 	}
 
 	h.HostOptions = &host.HostOptions{

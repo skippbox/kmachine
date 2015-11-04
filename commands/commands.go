@@ -10,7 +10,10 @@ import (
 
 	"github.com/docker/machine/cli"
 	"github.com/docker/machine/commands/mcndirs"
+	"github.com/docker/machine/drivers/errdriver"
 	"github.com/docker/machine/libmachine/cert"
+	"github.com/docker/machine/libmachine/drivers"
+	"github.com/docker/machine/libmachine/drivers/plugin/localbinary"
 	"github.com/docker/machine/libmachine/drivers/rpc"
 	"github.com/docker/machine/libmachine/host"
 	"github.com/docker/machine/libmachine/log"
@@ -19,78 +22,42 @@ import (
 
 var (
 	ErrUnknownShell       = errors.New("Error: Unknown shell")
-	ErrNoMachineSpecified = errors.New("Error: Expected to get one or more machine names as arguments.")
-	ErrExpectedOneMachine = errors.New("Error: Expected one machine name as an argument.")
-
-	RpcClientDriversCh = make(chan *rpcdriver.RpcClientDriver)
-	RpcDriversClosedCh = make(chan bool)
+	ErrNoMachineSpecified = errors.New("Error: Expected to get one or more machine names as arguments")
+	ErrExpectedOneMachine = errors.New("Error: Expected one machine name as an argument")
 )
 
-func newPluginDriver(driverName string, rawContent []byte) (*rpcdriver.RpcClientDriver, error) {
+func newPluginDriver(driverName string, rawContent []byte) (drivers.Driver, error) {
 	d, err := rpcdriver.NewRpcClientDriver(rawContent, driverName)
 	if err != nil {
+		// Not being able to find a driver binary is a "known error"
+		if _, ok := err.(localbinary.ErrPluginBinaryNotFound); ok {
+			return errdriver.NewDriver(driverName), nil
+		}
 		return nil, err
 	}
-
-	RpcClientDriversCh <- d
 
 	return d, nil
 }
 
-func DeferClosePluginServers() {
-	rpcClientDrivers := []*rpcdriver.RpcClientDriver{}
-
-	for d := range RpcClientDriversCh {
-		rpcClientDrivers = append(rpcClientDrivers, d)
+func fatalOnError(command func(context *cli.Context) error) func(context *cli.Context) {
+	return func(context *cli.Context) {
+		if err := command(context); err != nil {
+			log.Fatal(err)
+		}
 	}
-
-	doneCh := make(chan bool)
-
-	for _, d := range rpcClientDrivers {
-		d := d
-		go func() {
-			if err := d.Close(); err != nil {
-				log.Debugf("Error closing connection to plugin server: %s", err)
-			}
-
-			doneCh <- true
-		}()
-	}
-
-	for range rpcClientDrivers {
-		<-doneCh
-	}
-
-	RpcDriversClosedCh <- true
 }
 
-func fatal(args ...interface{}) {
-	close(RpcClientDriversCh)
-	<-RpcDriversClosedCh
-	log.Fatal(args...)
-}
-
-func fatalf(fmtString string, args ...interface{}) {
-	close(RpcClientDriversCh)
-	<-RpcDriversClosedCh
-	log.Fatalf(fmtString, args...)
-}
-
-func confirmInput(msg string) bool {
+func confirmInput(msg string) (bool, error) {
 	fmt.Printf("%s (y/n): ", msg)
+
 	var resp string
 	_, err := fmt.Scanln(&resp)
-
 	if err != nil {
-		fatal(err)
+		return false, err
 	}
 
-	if strings.Index(strings.ToLower(resp), "y") == 0 {
-		return true
-
-	}
-
-	return false
+	confirmed := strings.Index(strings.ToLower(resp), "y") == 0
+	return confirmed, nil
 }
 
 func getStore(c *cli.Context) persist.Store {
@@ -148,17 +115,16 @@ func saveHost(store persist.Store, h *host.Host) error {
 	return nil
 }
 
-func getFirstArgHost(c *cli.Context) *host.Host {
+func getFirstArgHost(c *cli.Context) (*host.Host, error) {
 	store := getStore(c)
 	hostName := c.Args().First()
 
 	exists, err := store.Exists(hostName)
 	if err != nil {
-		fatalf("Error checking if host %q exists: %s", hostName, err)
+		return nil, fmt.Errorf("Error checking if host %q exists: %s", hostName, err)
 	}
-
 	if !exists {
-		fatalf("Host %q does not exist", hostName)
+		return nil, fmt.Errorf("Host %q does not exist", hostName)
 	}
 
 	h, err := loadHost(store, hostName)
@@ -167,9 +133,10 @@ func getFirstArgHost(c *cli.Context) *host.Host {
 		// the host reliably we're definitely not going to be able to
 		// do anything else interesting, but also this premature exit
 		// feels wrong to me.  Let's revisit it later.
-		fatalf("Error trying to get host %q: %s", hostName, err)
+		return nil, fmt.Errorf("Error trying to get host %q: %s", hostName, err)
 	}
-	return h
+
+	return h, nil
 }
 
 func getHostsFromContext(c *cli.Context) ([]*host.Host, error) {
@@ -191,13 +158,13 @@ var Commands = []cli.Command{
 	{
 		Name:   "active",
 		Usage:  "Print which machine is active",
-		Action: cmdActive,
+		Action: fatalOnError(cmdActive),
 	},
 	{
 		Name:        "config",
 		Usage:       "Print the connection config for machine",
 		Description: "Argument is a machine name.",
-		Action:      cmdConfig,
+		Action:      fatalOnError(cmdConfig),
 		Flags: []cli.Flag{
 			cli.BoolFlag{
 				Name:  "swarm",
@@ -208,15 +175,15 @@ var Commands = []cli.Command{
 	{
 		Flags:           sharedCreateFlags,
 		Name:            "create",
-		Usage:           "Create a machine.\n\nSpecify a driver with --driver to include the create flags for that driver in the help text.",
-		Action:          cmdCreateOuter,
+		Usage:           fmt.Sprintf("Create a machine.\n\nRun '%s create --driver name' to include the create flags for that driver in the help text.", os.Args[0]),
+		Action:          fatalOnError(cmdCreateOuter),
 		SkipFlagParsing: true,
 	},
 	{
 		Name:        "env",
 		Usage:       "Display the commands to set up the environment for the Docker client",
 		Description: "Argument is a machine name.",
-		Action:      cmdEnv,
+		Action:      fatalOnError(cmdEnv),
 		Flags: []cli.Flag{
 			cli.BoolFlag{
 				Name:  "swarm",
@@ -240,7 +207,7 @@ var Commands = []cli.Command{
 		Name:        "inspect",
 		Usage:       "Inspect information about a machine",
 		Description: "Argument is a machine name.",
-		Action:      cmdInspect,
+		Action:      fatalOnError(cmdInspect),
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name:  "format, f",
@@ -253,13 +220,13 @@ var Commands = []cli.Command{
 		Name:        "ip",
 		Usage:       "Get the IP address of a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdIp,
+		Action:      fatalOnError(cmdIp),
 	},
 	{
 		Name:        "kill",
 		Usage:       "Kill a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdKill,
+		Action:      fatalOnError(cmdKill),
 	},
 	{
 		Flags: []cli.Flag{
@@ -275,13 +242,13 @@ var Commands = []cli.Command{
 		},
 		Name:   "ls",
 		Usage:  "List machines",
-		Action: cmdLs,
+		Action: fatalOnError(cmdLs),
 	},
 	{
 		Name:        "regenerate-certs",
 		Usage:       "Regenerate TLS Certificates for a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdRegenerateCerts,
+		Action:      fatalOnError(cmdRegenerateCerts),
 		Flags: []cli.Flag{
 			cli.BoolFlag{
 				Name:  "force, f",
@@ -293,7 +260,7 @@ var Commands = []cli.Command{
 		Name:        "restart",
 		Usage:       "Restart a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdRestart,
+		Action:      fatalOnError(cmdRestart),
 	},
 	{
 		Flags: []cli.Flag{
@@ -305,20 +272,20 @@ var Commands = []cli.Command{
 		Name:        "rm",
 		Usage:       "Remove a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdRm,
+		Action:      fatalOnError(cmdRm),
 	},
 	{
 		Name:            "ssh",
 		Usage:           "Log into or run a command on a machine with SSH.",
 		Description:     "Arguments are [machine-name] [command]",
-		Action:          cmdSsh,
+		Action:          fatalOnError(cmdSsh),
 		SkipFlagParsing: true,
 	},
 	{
 		Name:        "scp",
 		Usage:       "Copy files between machines",
 		Description: "Arguments are [machine:][path] [machine:][path].",
-		Action:      cmdScp,
+		Action:      fatalOnError(cmdScp),
 		Flags: []cli.Flag{
 			cli.BoolFlag{
 				Name:  "recursive, r",
@@ -330,31 +297,31 @@ var Commands = []cli.Command{
 		Name:        "start",
 		Usage:       "Start a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdStart,
+		Action:      fatalOnError(cmdStart),
 	},
 	{
 		Name:        "status",
 		Usage:       "Get the status of a machine",
 		Description: "Argument is a machine name.",
-		Action:      cmdStatus,
+		Action:      fatalOnError(cmdStatus),
 	},
 	{
 		Name:        "stop",
 		Usage:       "Stop a machine",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdStop,
+		Action:      fatalOnError(cmdStop),
 	},
 	{
 		Name:        "upgrade",
 		Usage:       "Upgrade a machine to the latest version of Docker",
 		Description: "Argument(s) are one or more machine names.",
-		Action:      cmdUpgrade,
+		Action:      fatalOnError(cmdUpgrade),
 	},
 	{
 		Name:        "url",
 		Usage:       "Get the URL of a machine",
 		Description: "Argument is a machine name.",
-		Action:      cmdUrl,
+		Action:      fatalOnError(cmdUrl),
 	},
 }
 
@@ -418,7 +385,7 @@ func runActionForeachMachine(actionName string, machines []*host.Host) []error {
 		serialChan := make(chan error)
 		go machineCommand(actionName, machine, serialChan)
 		if err := <-serialChan; err != nil {
-			log.Errorln(err)
+			errs = append(errs, err)
 		}
 		close(serialChan)
 	}
@@ -428,7 +395,6 @@ func runActionForeachMachine(actionName string, machines []*host.Host) []error {
 	// rate limit us.
 	for i := 0; i < numConcurrentActions; i++ {
 		if err := <-errorChan; err != nil {
-			log.Errorln(err)
 			errs = append(errs, err)
 		}
 	}

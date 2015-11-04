@@ -212,10 +212,6 @@ func (d *Driver) GetState() (state.State, error) {
 	return state.None, nil
 }
 
-func (d *Driver) PreCreateCheck() error {
-	return nil
-}
-
 // the current implementation does the following:
 // 1. check whether the docker directory contains the boot2docker ISO
 // 2. generate an SSH keypair and bundle it in a tar.
@@ -226,7 +222,7 @@ func (d *Driver) Create() error {
 		return err
 	}
 
-	b2dutils := mcnutils.NewB2dUtils("", "", d.StorePath)
+	b2dutils := mcnutils.NewB2dUtils(d.StorePath)
 	if err := b2dutils.CopyIsoToMachineDir(d.Boot2DockerURL, d.MachineName); err != nil {
 		return err
 	}

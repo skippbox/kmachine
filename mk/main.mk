@@ -1,9 +1,9 @@
 # Initialize version and gc flags
-GO_LDFLAGS := -X `go list ./version`.GitCommit=`git rev-parse --short HEAD`
+GO_LDFLAGS := -X `go list ./version`.GitCommit=`git rev-parse --short HEAD 2>/dev/null`
 GO_GCFLAGS :=
 
 # Full package list
-PKGS := $(shell go list -tags "$(BUILDTAGS)" ./commands/... ./libmachine/... ./drivers/... | grep -v "/vendor/" | grep -v "/Godeps/")
+PKGS := $(shell go list -tags "$(BUILDTAGS)" ./... | grep -v "/vendor/" | grep -v "/Godeps/" | grep -v "/cmd")
 
 # Support go1.5 vendoring (let us avoid messing with GOPATH or using godep)
 export GO15VENDOREXPERIMENT = 1
@@ -32,7 +32,6 @@ VERBOSE_GO :=
 GO := go
 ifeq ($(VERBOSE),true)
 	VERBOSE_GO := -v
-	GO := go
 endif
 
 include mk/build.mk
@@ -57,10 +56,11 @@ plugins: build-plugins
 # Build all, cross platform
 cross: build-x
 
-clean: coverage-clean build-clean
-test: dco fmt vet test-short
-validate: dco fmt vet lint test-short test-long
 install:
-	cp ./bin/docker-machine* /usr/local/bin/
+	cp $(PREFIX)/bin/docker-machine $(PREFIX)/bin/docker-machine-driver* /usr/local/bin
+
+clean: coverage-clean build-clean
+test: dco fmt test-short vet
+validate: dco fmt vet lint test-short test-long
 
 .PHONY: .all_build .all_coverage .all_release .all_test .all_validate test build validate clean

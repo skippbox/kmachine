@@ -14,7 +14,6 @@ import (
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/host"
 	"github.com/docker/machine/libmachine/log"
-	"github.com/docker/machine/libmachine/persist"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
 	"github.com/skarademir/naturalsort"
@@ -41,17 +40,17 @@ type HostListItem struct {
 	SwarmOptions *swarm.SwarmOptions
 }
 
-func cmdLs(c *cli.Context) {
+func cmdLs(c *cli.Context) error {
 	quiet := c.Bool("quiet")
 	filters, err := parseFilters(c.StringSlice("filter"))
 	if err != nil {
-		fatal(err)
+		return err
 	}
 
 	store := getStore(c)
 	hostList, err := listHosts(store)
 	if err != nil {
-		fatal(err)
+		return err
 	}
 
 	hostList = filterHosts(hostList, filters)
@@ -61,7 +60,7 @@ func cmdLs(c *cli.Context) {
 		for _, host := range hostList {
 			fmt.Println(host.Name)
 		}
-		return
+		return nil
 	}
 
 	swarmMasters := make(map[string]string)
@@ -104,6 +103,8 @@ func cmdLs(c *cli.Context) {
 	}
 
 	w.Flush()
+
+	return nil
 }
 
 func parseFilters(filters []string) (FilterOptions, error) {
@@ -219,34 +220,14 @@ func matchesName(host *host.Host, names []string) bool {
 	for _, n := range names {
 		r, err := regexp.Compile(n)
 		if err != nil {
-			fatal(err)
+			// TODO: remove that call to Fatal
+			log.Fatal(err)
 		}
 		if r.MatchString(host.Driver.GetMachineName()) {
 			return true
 		}
 	}
 	return false
-}
-
-func getActiveHost(store persist.Store) (*host.Host, error) {
-	hosts, err := listHosts(store)
-	if err != nil {
-		return nil, err
-	}
-
-	hostListItems := getHostListItems(hosts)
-
-	for _, item := range hostListItems {
-		if item.Active {
-			h, err := loadHost(store, item.Name)
-			if err != nil {
-				return nil, err
-			}
-			return h, nil
-		}
-	}
-
-	return nil, errors.New("Active host not found")
 }
 
 func attemptGetHostState(h *host.Host, stateQueryChan chan<- HostListItem) {
@@ -334,19 +315,6 @@ func getHostListItems(hostList []*host.Host) []HostListItem {
 
 	close(hostListItemsChan)
 	return hostListItems
-}
-
-// IsActive provides a single function for determining if a host is active
-// based on both the url and if the host is stopped.
-func isActive(h *host.Host, currentState state.State, url string) (bool, error) {
-	dockerHost := os.Getenv("DOCKER_HOST")
-
-	running := currentState == state.Running
-	correctURL := url == dockerHost
-
-	isActive := running && correctURL
-
-	return isActive, nil
 }
 
 func sortHostListItemsByName(items []HostListItem) {

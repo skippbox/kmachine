@@ -101,10 +101,6 @@ func (d *Driver) DriverName() string {
 	return "hyperv"
 }
 
-func (d *Driver) PreCreateCheck() error {
-	return nil
-}
-
 func (d *Driver) GetURL() (string, error) {
 	ip, err := d.GetIP()
 	if err != nil {
@@ -149,7 +145,7 @@ func (d *Driver) Create() error {
 
 	d.setMachineNameIfNotSet()
 
-	b2dutils := mcnutils.NewB2dUtils("", "", d.StorePath)
+	b2dutils := mcnutils.NewB2dUtils(d.StorePath)
 	if err := b2dutils.CopyIsoToMachineDir(d.boot2DockerURL, d.MachineName); err != nil {
 		return err
 	}

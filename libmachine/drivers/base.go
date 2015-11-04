@@ -60,6 +60,7 @@ func (d *BaseDriver) GetK8SPort() int {
 	}
 
 	return d.K8SPort
+}
 
 // PreCreateCheck is called to enforce pre-creation steps
 func (d *BaseDriver) PreCreateCheck() error {

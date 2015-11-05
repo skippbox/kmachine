@@ -38,6 +38,7 @@ const (
 	imageName          = "https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/ubuntu-1404-trusty-v20150909a"
 	firewallRule       = "docker-machines"
 	port               = "2376"
+	kubernetesPort     = "6443"
 	firewallTargetTag  = "docker-machine"
 	dockerStartCommand = "sudo service docker start"
 	dockerStopCommand  = "sudo service docker stop"
@@ -133,6 +134,7 @@ func (c *ComputeUtil) createFirewallRule() error {
 			IPProtocol: "tcp",
 			Ports: []string{
 				port,
+				kubernetesPort,
 			},
 		},
 	}

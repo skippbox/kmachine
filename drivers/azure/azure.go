@@ -34,6 +34,7 @@ type Driver struct {
 const (
 	defaultDockerPort      = 2376
 	defaultSwarmMasterPort = 3376
+	defaultKubernetesPort  = 6443
 	defaultLocation        = "West US"
 	defaultSize            = "Small"
 	defaultSSHPort         = 22
@@ -54,6 +55,11 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Usage: "Azure Docker Swarm master port",
 			Value: defaultSwarmMasterPort,
 		},
+		mcnflag.IntFlag{
+			Name:  "azure-kubernetes-port",
+			Usage: "Azure Kubernetes port",
+			Value: defaulKubernetesPort,
+		},		
 		mcnflag.StringFlag{
 			EnvVar: "AZURE_IMAGE",
 			Name:   "azure-image",
@@ -107,6 +113,7 @@ func NewDriver(hostName, storePath string) drivers.Driver {
 	d := &Driver{
 		DockerPort:            defaultDockerPort,
 		DockerSwarmMasterPort: defaultSwarmMasterPort,
+		KubernetesPort         defaultKubernetesPort,
 		Location:              defaultLocation,
 		Size:                  defaultSize,
 		BaseDriver: &drivers.BaseDriver{
@@ -178,6 +185,7 @@ func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
 	d.UserPassword = flags.String("azure-password")
 	d.DockerPort = flags.Int("azure-docker-port")
 	d.DockerSwarmMasterPort = flags.Int("azure-docker-swarm-master-port")
+	d.KubernetesPort = flags.Int("azure-kubernetes-port")
 	d.SSHPort = flags.Int("azure-ssh-port")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
@@ -414,6 +422,16 @@ func (d *Driver) addDockerEndpoints(vmConfig *vmClient.Role) error {
 			}
 			configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, swarm_ep)
 			log.Debugf("added Docker swarm master endpoint (port %d) to configuration", d.DockerSwarmMasterPort)
+		}
+		if d.KubernetesPort {
+			kubernetes_ep := vmClient.InputEndpoint {
+				Name:      "kubernetes",
+				Protocol:  "tcp",
+				Port:      d.KubernetesPort,
+				LocalPort: d.KubernetesPort,
+			}
+			configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, kubernetes_ep)
+			log.Debugf("added Kubernetes endpoint (port %d) to configuration", d.KubernetesPort)
 		}
 		configSets[i].InputEndpoints.InputEndpoint = append(configSets[i].InputEndpoints.InputEndpoint, ep)
 		log.Debugf("added Docker endpoint (port %d) to configuration", d.DockerPort)

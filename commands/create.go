@@ -179,6 +179,8 @@ func cmdCreateInner(c *cli.Context) error {
 		k8sToken = kubernetes.GenerateRandomToken(32)
 	}
 
+	machineDir := filepath.Join(mcndirs.GetMachineDir(), name)
+
 	h.HostOptions = &host.HostOptions{
 		AuthOptions: &auth.AuthOptions{
 			CertDir:          mcndirs.GetMachineCertDir(),
@@ -212,6 +214,13 @@ func cmdCreateInner(c *cli.Context) error {
 		},
 		KubernetesOptions: &kubernetes.KubernetesOptions {
 			K8SToken:		k8sToken,
+			K8SCertPath:	"/var/run/kubernetes",
+			K8SAPICert:     kubernetes.GetBase(machineDir, name, "api") + "cert.pem",
+			K8SAPIKey:      kubernetes.GetBase(machineDir, name, "api") + "key.pem",
+			K8SProxyCert:   kubernetes.GetBase(machineDir, name, "proxy") + "cert.pem",
+			K8SProxyKey:    kubernetes.GetBase(machineDir, name, "proxy") + "key.pem",
+			K8SAdminCert:   kubernetes.GetBase(machineDir, name, "admin") + "cert.pem",
+			K8SAdminKey:    kubernetes.GetBase(machineDir, name, "admin") + "key.pem",
 		},
 	}
 

@@ -75,7 +75,6 @@ func (provisioner *GenericProvisioner) GetKubernetesOptions() kubernetes.Kuberne
     return provisioner.KubernetesOptions
 }
 
-// CAB: Determine if this is where the certs should be specified
 func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error) {
 	var (
 		k8sCfg bytes.Buffer
@@ -85,7 +84,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 {
 "apiVersion": "v1",
 "kind": "Pod",
-"metadata": {"name":"kubernetes"},
+"metadata": {"name":"kubernetes123"},
 "spec":{
   "hostNetwork": true,
   "containers":[

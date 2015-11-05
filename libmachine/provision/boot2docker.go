@@ -305,7 +305,7 @@ func (provisioner *Boot2DockerProvisioner) Provision(k8sOptions kubernetes.Kuber
 		return err
 	}
 
-	if err = configureKubernetes(provisioner, provisioner.KubernetesOptions, authOptions); err != nil {
+	if err = configureKubernetes(provisioner, &provisioner.KubernetesOptions, authOptions); err != nil {
 		return err
 	}
 	return nil

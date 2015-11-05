@@ -3,15 +3,14 @@ package kubernetes
 import (
     "crypto/rand"
     "fmt"
+	"path"
 )
 
 type KubernetesOptions struct {
     K8SToken        string
-
+    K8SCertPath     string
     K8SAPICert      string
     K8SAPIKey       string
-    K8SClientCert   string
-    K8SClientKey    string
     K8SProxyCert    string
     K8SProxyKey     string
     K8SAdminCert    string
@@ -41,4 +40,13 @@ func GenerateRandomToken(size int) string {
     }
 
     return fmt.Sprintf("%s", encstr)
+}
+
+func GenOrg(name string, app string) (string) {
+	return name + "-" + app
+}
+
+func GetBase(dir string, name string, app string) (string) {
+	base := GenOrg(name, app) + "_"
+	return path.Join(dir, base)
 }

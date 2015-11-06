@@ -106,16 +106,16 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 		return fmt.Errorf("Error generating proxy cert: %s", err)
 	}
 
-    /* Kick off the kubernetes run */
-    if _, err := p.SSHCommand(fmt.Sprintf("echo %q > /tmp/tokenfile.txt", k8sOptions.K8SToken)); err != nil {
-        return err
-    }
-
 	/* Copy certs into place */
 	log.Info("Copying certs to the remote system...")
 
 	/* CAB: This should probably be an option */
 	targetDir := k8sOptions.K8SCertPath
+
+    /* Kick off the kubernetes run */
+    if _, err := p.SSHCommand(fmt.Sprintf("printf '%q,%s,%d' |sudo tee %s", k8sOptions.K8SToken, "kuser",0,path.Join(targetDir, "tokenfile.txt"))); err != nil {
+        return err
+    }
 
 	if err := xferCert(p, k8sOptions.K8SAPIKey, targetDir + "/apiserver"); err != nil {
 		return err
@@ -150,6 +150,11 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 	}
 
 	if err := fixPermissions(p, k8sOptions.K8SAdminKey, targetDir + "/kubelet"); err != nil {
+		return err
+	}
+
+	/* Copy the CA cert to a known location */
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo cp /home/docker/.docker/ca.pem %s/ca.pem", targetDir)); err != nil {
 		return err
 	}
 

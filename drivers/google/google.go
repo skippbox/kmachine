@@ -14,22 +14,21 @@ import (
 // Driver is a struct compatible with the docker.hosts.drivers.Driver interface.
 type Driver struct {
 	*drivers.BaseDriver
-	Zone          string
-	MachineType   string
-	DiskType      string
-	Address       string
-	Preemptible   bool
-	Scopes        string
-	DiskSize      int
-	AuthTokenPath string
-	Project       string
-	Tags          string
+	Zone        string
+	MachineType string
+	DiskType    string
+	Address     string
+	Preemptible bool
+	Scopes      string
+	DiskSize    int
+	Project     string
+	Tags        string
 }
 
 const (
 	defaultZone        = "us-central1-a"
 	defaultUser        = "docker-user"
-	defaultMachineType = "f1-micro"
+	defaultMachineType = "n1-standard-1"
 	defaultScopes      = "https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/logging.write"
 	defaultDiskType    = "pd-standard"
 	defaultDiskSize    = 10
@@ -61,11 +60,6 @@ func (d *Driver) GetCreateFlags() []mcnflag.Flag {
 			Name:   "google-project",
 			Usage:  "GCE Project",
 			EnvVar: "GOOGLE_PROJECT",
-		},
-		mcnflag.StringFlag{
-			Name:   "google-auth-token",
-			Usage:  "GCE oAuth token",
-			EnvVar: "GOOGLE_AUTH_TOKEN",
 		},
 		mcnflag.StringFlag{
 			Name:   "google-scopes",
@@ -140,52 +134,66 @@ func (d *Driver) DriverName() string {
 
 // SetConfigFromFlags initializes the driver based on the command line flags.
 func (d *Driver) SetConfigFromFlags(flags drivers.DriverOptions) error {
+	d.Project = flags.String("google-project")
+	if d.Project == "" {
+		return fmt.Errorf("Please specify the Google Cloud Project name using the option --google-project.")
+	}
+
 	d.Zone = flags.String("google-zone")
 	d.MachineType = flags.String("google-machine-type")
 	d.DiskSize = flags.Int("google-disk-size")
 	d.DiskType = flags.String("google-disk-type")
 	d.Address = flags.String("google-address")
 	d.Preemptible = flags.Bool("google-preemptible")
-	d.AuthTokenPath = flags.String("google-auth-token")
-	d.Project = flags.String("google-project")
 	d.Scopes = flags.String("google-scopes")
 	d.Tags = flags.String("google-tags")
 	d.SwarmMaster = flags.Bool("swarm-master")
 	d.SwarmHost = flags.String("swarm-host")
 	d.SwarmDiscovery = flags.String("swarm-discovery")
-	if d.Project == "" {
-		return fmt.Errorf("Please specify the Google Cloud Project name using the option --google-project.")
-	}
 	d.SSHUser = flags.String("google-username")
 	d.SSHPort = 22
+
 	return nil
 }
 
-func (d *Driver) initApis() (*ComputeUtil, error) {
-	return newComputeUtil(d)
-}
-
-// PreCreateCheck allows for pre-create operations to make sure a driver is ready for creation
-// It's a noop on GCE.
+// PreCreateCheck is called to enforce pre-creation steps
 func (d *Driver) PreCreateCheck() error {
+	c, err := newComputeUtil(d)
+	if err != nil {
+		return err
+	}
+
+	// Check that the project exists. It will also check that credentials
+	// at the same time.
+	log.Infof("Check that the project exists")
+
+	if _, err = c.service.Projects.Get(d.Project).Do(); err != nil {
+		return fmt.Errorf("Project with ID %q not found. %v", d.Project, err)
+	}
+
+	// Check if the instance already exists. There will be an error if the instance
+	// doesn't exist, so just check instance for nil.
+	log.Infof("Check if the instance already exists")
+
+	if instance, _ := c.instance(); instance != nil {
+		return fmt.Errorf("Instance %v already exists.", d.MachineName)
+	}
+
 	return nil
 }
 
 // Create creates a GCE VM instance acting as a docker host.
 func (d *Driver) Create() error {
-	c, err := newComputeUtil(d)
-	if err != nil {
+	log.Infof("Generating SSH Key")
+
+	if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
 		return err
 	}
-	log.Infof("Creating host...")
-	// Check if the instance already exists. There will be an error if the instance
-	// doesn't exist, so just check instance for nil.
-	if instance, _ := c.instance(); instance != nil {
-		return fmt.Errorf("Instance %v already exists.", d.MachineName)
-	}
 
-	log.Infof("Generating SSH Key")
-	if err := ssh.GenerateSSHKey(d.GetSSHKeyPath()); err != nil {
+	log.Infof("Creating host...")
+
+	c, err := newComputeUtil(d)
+	if err != nil {
 		return err
 	}
 

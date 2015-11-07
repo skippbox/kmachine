@@ -19,8 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"path"
-
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnflag"
@@ -44,7 +42,8 @@ const (
 
 var (
 	ErrUnableToGenerateRandomIP = errors.New("unable to generate random IP")
-	ErrMustEnableVTX            = errors.New("This computer doesn't have VT-X/AMD-v enabled. Enabling it in the BIOS is mandatory.")
+	ErrMustEnableVTX            = errors.New("This computer doesn't have VT-X/AMD-v enabled. Enabling it in the BIOS is mandatory")
+	ErrNetworkAddrCidr          = errors.New("host-only cidr must be specified with a host address, not a network address")
 )
 
 type Driver struct {
@@ -187,24 +186,6 @@ func (d *Driver) PreCreateCheck() error {
 	return d.vbm()
 }
 
-// IsVTXDisabled checks if VT-X is disabled in the BIOS. If it is, the vm will fail to start.
-// If we can't be sure it is disabled, we carry on and will check the vm logs after it's started.
-func (d *Driver) IsVTXDisabled() bool {
-	if runtime.GOOS == "windows" {
-		output, err := cmdOutput("wmic", "cpu", "get", "VirtualizationFirmwareEnabled")
-		if err != nil {
-			log.Debugf("Couldn't check that VT-X/AMD-v is enabled. Will check that the vm is properly created: %v", err)
-			return false
-		}
-
-		disabled := strings.Contains(output, "FALSE")
-		return disabled
-	}
-
-	// TODO: linux and OSX
-	return false
-}
-
 // cmdOutput runs a shell command and returns its output.
 func cmdOutput(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
@@ -222,7 +203,10 @@ func cmdOutput(name string, args ...string) (string, error) {
 
 // IsVTXDisabledInTheVM checks if VT-X is disabled in the started vm.
 func (d *Driver) IsVTXDisabledInTheVM() (bool, error) {
-	file, err := os.Open(path.Join(d.ResolveStorePath(d.MachineName), "Logs", "VBox.log"))
+	logPath := filepath.Join(d.ResolveStorePath(d.MachineName), "Logs", "VBox.log")
+	log.Debugf("Checking vm logs: %s", logPath)
+
+	file, err := os.Open(logPath)
 	if err != nil {
 		return true, err
 	}
@@ -232,7 +216,10 @@ func (d *Driver) IsVTXDisabledInTheVM() (bool, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if strings.Contains(scanner.Text(), "VT-x is disabled") {
-			return true, ErrMustEnableVTX
+			return true, nil
+		}
+		if strings.Contains(scanner.Text(), "the host CPU does NOT support HW virtualization") {
+			return true, nil
 		}
 	}
 
@@ -240,13 +227,17 @@ func (d *Driver) IsVTXDisabledInTheVM() (bool, error) {
 }
 
 func (d *Driver) Create() error {
-	b2dutils := mcnutils.NewB2dUtils("", "", d.StorePath)
+	b2dutils := mcnutils.NewB2dUtils(d.StorePath)
 	if err := b2dutils.CopyIsoToMachineDir(d.Boot2DockerURL, d.MachineName); err != nil {
 		return err
 	}
 
 	if d.IsVTXDisabled() {
-		return ErrMustEnableVTX
+		// Let's log a warning to warn the user. When the vm is started, logs
+		// will be checked for an error anyway.
+		// We could fail right here but the method to check didn't prove being
+		// bulletproof.
+		log.Warn("This computer doesn't have VT-X/AMD-v enabled. Enabling it in the BIOS is mandatory.")
 	}
 
 	log.Infof("Creating VirtualBox VM...")
@@ -682,19 +673,17 @@ func (d *Driver) setupHostOnlyNetwork(machineName string) error {
 		hostOnlyCIDR = defaultHostOnlyCIDR
 	}
 
-	ip, network, err := net.ParseCIDR(hostOnlyCIDR)
+	ip, network, err := parseAndValidateCIDR(hostOnlyCIDR)
+	if err != nil {
+		return err
+	}
 
+	dhcpAddr, err := getRandomIPinSubnet(ip)
 	if err != nil {
 		return err
 	}
 
 	nAddr := network.IP.To4()
-
-	dhcpAddr, err := getRandomIPinSubnet(network.IP)
-	if err != nil {
-		return err
-	}
-
 	lowerDHCPIP := net.IPv4(nAddr[0], nAddr[1], nAddr[2], byte(100))
 	upperDHCPIP := net.IPv4(nAddr[0], nAddr[1], nAddr[2], byte(254))
 
@@ -717,6 +706,20 @@ func (d *Driver) setupHostOnlyNetwork(machineName string) error {
 		"--nicpromisc2", d.HostOnlyPromiscMode,
 		"--hostonlyadapter2", hostOnlyNetwork.Name,
 		"--cableconnected2", "on")
+}
+
+func parseAndValidateCIDR(hostOnlyCIDR string) (net.IP, *net.IPNet, error) {
+	ip, network, err := net.ParseCIDR(hostOnlyCIDR)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	networkAddress := network.IP.To4()
+	if ip.Equal(networkAddress) {
+		return nil, nil, ErrNetworkAddrCidr
+	}
+
+	return ip, network, nil
 }
 
 // createDiskImage makes a disk image at dest with the given size in MB. If r is

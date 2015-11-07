@@ -188,10 +188,6 @@ func (d *Driver) GetState() (state.State, error) {
 	return state.None, nil
 }
 
-func (d *Driver) PreCreateCheck() error {
-	return nil
-}
-
 func (d *Driver) createDefaultSecurityGroup(client *egoscale.Client, group string) (string, error) {
 	rules := []egoscale.SecurityGroupRule{
 		{
@@ -211,6 +207,12 @@ func (d *Driver) createDefaultSecurityGroup(client *egoscale.Client, group strin
 			Cidr:            "0.0.0.0/0",
 			Protocol:        "TCP",
 			Port:            3376,
+		},
+		{
+			SecurityGroupId: "",
+			Cidr:            "0.0.0.0/0",
+			Protocol:        "TCP",
+			Port:            6443,
 		},
 		{
 			SecurityGroupId: "",

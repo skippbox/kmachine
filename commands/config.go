@@ -14,26 +14,44 @@ import (
 	"github.com/docker/machine/libmachine/state"
 )
 
-func cmdConfig(c *cli.Context) {
+// For when the cert is computed to be invalid.
+type ErrCertInvalid struct {
+	wrappedErr error
+	hostUrl    string
+}
+
+func (e ErrCertInvalid) Error() string {
+	return fmt.Sprintf(`There was an error validating certificates for host %q: %s
+You can attempt to regenerate them using 'docker-machine regenerate-certs name'.
+Be advised that this will trigger a Docker daemon restart which will stop running containers.
+`, e.hostUrl, e.wrappedErr)
+}
+
+func cmdConfig(c *cli.Context) error {
 	// Ensure that log messages always go to stderr when this command is
 	// being run (it is intended to be run in a subshell)
 	log.SetOutWriter(os.Stderr)
 
 	if len(c.Args()) != 1 {
-		fatal(ErrExpectedOneMachine)
+		return ErrExpectedOneMachine
 	}
 
-	h := getFirstArgHost(c)
-
-	dockerHost, authOptions, err := runConnectionBoilerplate(h, c)
+	host, err := getFirstArgHost(c)
 	if err != nil {
-		fatalf("Error running connection boilerplate: %s", err)
+		return err
+	}
+
+	dockerHost, authOptions, err := runConnectionBoilerplate(host, c)
+	if err != nil {
+		return fmt.Errorf("Error running connection boilerplate: %s", err)
 	}
 
 	log.Debug(dockerHost)
 
 	fmt.Printf("--tlsverify --tlscacert=%q --tlscert=%q --tlskey=%q -H=%s",
 		authOptions.CaCertPath, authOptions.ClientCertPath, authOptions.ClientKeyPath, dockerHost)
+
+	return nil
 }
 
 func runConnectionBoilerplate(h *host.Host, c *cli.Context) (string, *auth.AuthOptions, error) {
@@ -44,7 +62,7 @@ func runConnectionBoilerplate(h *host.Host, c *cli.Context) (string, *auth.AuthO
 		return "", &auth.AuthOptions{}, fmt.Errorf("Error trying to get host state: %s", err)
 	}
 	if hostState != state.Running {
-		return "", &auth.AuthOptions{}, fmt.Errorf("%s is not running. Please start it in order to use the connection settings.", h.Name)
+		return "", &auth.AuthOptions{}, fmt.Errorf("%s is not running. Please start it in order to use the connection settings", h.Name)
 	}
 
 	dockerHost, err := h.Driver.GetURL()
@@ -67,29 +85,19 @@ func runConnectionBoilerplate(h *host.Host, c *cli.Context) (string, *auth.AuthO
 
 	authOptions := h.HostOptions.AuthOptions
 
-	if err := checkCert(u.Host, authOptions, c); err != nil {
+	if err := checkCert(u.Host, authOptions); err != nil {
 		return "", &auth.AuthOptions{}, fmt.Errorf("Error checking and/or regenerating the certs: %s", err)
 	}
 
 	return dockerHost, authOptions, nil
 }
 
-func checkCert(hostUrl string, authOptions *auth.AuthOptions, c *cli.Context) error {
-	valid, err := cert.ValidateCertificate(
-		hostUrl,
-		authOptions.CaCertPath,
-		authOptions.ServerCertPath,
-		authOptions.ServerKeyPath,
-	)
-	if err != nil {
-		return fmt.Errorf("Error attempting to validate the certficate: %s", err)
-	}
-
-	if !valid {
-		log.Errorf("Invalid certs detected; regenerating for %s", hostUrl)
-
-		if err := runActionWithContext("configureAuth", c); err != nil {
-			return fmt.Errorf("Error attempting to regenerate the certs: %s", err)
+func checkCert(hostUrl string, authOptions *auth.AuthOptions) error {
+	valid, err := cert.ValidateCertificate(hostUrl, authOptions)
+	if !valid || err != nil {
+		return ErrCertInvalid{
+			wrappedErr: err,
+			hostUrl:    hostUrl,
 		}
 	}
 
@@ -101,7 +109,7 @@ func parseSwarm(hostUrl string, h *host.Host) (string, error) {
 	swarmOptions := h.HostOptions.SwarmOptions
 
 	if !swarmOptions.Master {
-		return "", fmt.Errorf("Error: %s is not a swarm master.  The --swarm flag is intended for use with swarm masters.", h.Name)
+		return "", fmt.Errorf("Error: %s is not a swarm master.  The --swarm flag is intended for use with swarm masters", h.Name)
 	}
 
 	u, err := url.Parse(swarmOptions.Host)

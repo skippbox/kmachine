@@ -73,29 +73,41 @@ type LocalBinaryPlugin struct {
 type LocalBinaryExecutor struct {
 	pluginStdout, pluginStderr io.ReadCloser
 	DriverName                 string
+	binaryPath                 string
 }
 
-func NewLocalBinaryPlugin(driverName string) *LocalBinaryPlugin {
-	return &LocalBinaryPlugin{
-		stopCh: make(chan bool, 1),
-		addrCh: make(chan string, 1),
-		Executor: &LocalBinaryExecutor{
-			DriverName: driverName,
-		},
-	}
+type ErrPluginBinaryNotFound struct {
+	driverName string
 }
 
-func (lbe *LocalBinaryExecutor) Start() (*bufio.Scanner, *bufio.Scanner, error) {
-	log.Debugf("Launching plugin server for driver %s", lbe.DriverName)
+func (e ErrPluginBinaryNotFound) Error() string {
+	return fmt.Sprintf("Driver %q not found. Do you have the plugin binary accessible in your PATH?", e.driverName)
+}
 
-	binaryPath, err := exec.LookPath(fmt.Sprintf("docker-machine-driver-%s", lbe.DriverName))
+func NewLocalBinaryPlugin(driverName string) (*LocalBinaryPlugin, error) {
+	binaryPath, err := exec.LookPath(fmt.Sprintf("docker-machine-driver-%s", driverName))
 	if err != nil {
-		return nil, nil, fmt.Errorf("Driver %q not found. Do you have the plugin binary accessible in your PATH?", lbe.DriverName)
+		return nil, ErrPluginBinaryNotFound{driverName}
 	}
 
 	log.Debugf("Found binary path at %s", binaryPath)
 
-	cmd := exec.Command(binaryPath)
+	return &LocalBinaryPlugin{
+		stopCh: make(chan bool),
+		addrCh: make(chan string, 1),
+		Executor: &LocalBinaryExecutor{
+			DriverName: driverName,
+			binaryPath: binaryPath,
+		},
+	}, nil
+}
+
+func (lbe *LocalBinaryExecutor) Start() (*bufio.Scanner, *bufio.Scanner, error) {
+	var err error
+
+	log.Debugf("Launching plugin server for driver %s", lbe.DriverName)
+
+	cmd := exec.Command(lbe.binaryPath)
 
 	lbe.pluginStdout, err = cmd.StdoutPipe()
 	if err != nil {
@@ -132,13 +144,19 @@ func (lbe *LocalBinaryExecutor) Close() error {
 }
 
 func stream(scanner *bufio.Scanner, streamOutCh chan<- string, stopCh <-chan bool) {
-	for scanner.Scan() {
+	lines := make(chan string)
+	go func() {
+		for scanner.Scan() {
+			lines <- scanner.Text()
+		}
+	}()
+	for {
 		select {
 		case <-stopCh:
 			close(streamOutCh)
 			return
-		default:
-			streamOutCh <- strings.Trim(scanner.Text(), "\n")
+		case line := <-lines:
+			streamOutCh <- strings.Trim(line, "\n")
 			if err := scanner.Err(); err != nil {
 				log.Warnf("Scanning stream: %s", err)
 			}
@@ -148,7 +166,7 @@ func stream(scanner *bufio.Scanner, streamOutCh chan<- string, stopCh <-chan boo
 
 func (lbp *LocalBinaryPlugin) AttachStream(scanner *bufio.Scanner) (<-chan string, chan<- bool) {
 	streamOutCh := make(chan string)
-	stopCh := make(chan bool, 1)
+	stopCh := make(chan bool)
 	go stream(scanner, streamOutCh, stopCh)
 	return streamOutCh, stopCh
 }

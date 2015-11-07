@@ -78,7 +78,7 @@ func ConfigureAuth(p Provisioner) error {
 	driver := p.GetDriver()
 	machineName := driver.GetMachineName()
 	authOptions := p.GetAuthOptions()
-	org := machineName
+	org := mcnutils.GetUsername() + "." + machineName
 	bits := 2048
 
 	ip, err := driver.GetIP()
@@ -110,7 +110,7 @@ func ConfigureAuth(p Provisioner) error {
 	// TODO: Switch to passing just authOptions to this func
 	// instead of all these individual fields
 	err = cert.GenerateCert(
-		[]string{ip},
+		[]string{ip, "localhost"},
 		authOptions.ServerCertPath,
 		authOptions.ServerKeyPath,
 		authOptions.CaCertPath,
@@ -194,11 +194,7 @@ func ConfigureAuth(p Provisioner) error {
 		return err
 	}
 
-	if err := waitForDocker(p, dockerPort); err != nil {
-		return err
-	}
-
-	return nil
+	return waitForDocker(p, dockerPort)
 }
 
 func installk8sGeneric(p Provisioner) error {
@@ -215,7 +211,7 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "machine,1000", "/tmp/tokenfile.txt")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "kmachine,0", "/tmp/tokenfile.txt")); err != nil {
 		return err
 	}
 

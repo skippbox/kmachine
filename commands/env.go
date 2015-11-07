@@ -4,19 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
 	"github.com/docker/machine/cli"
+	"github.com/docker/machine/commands/mcndirs"
 	"github.com/docker/machine/libmachine/log"
 )
 
 const (
-	envTmpl = `kubectl config set-cluster {{ .MachineName }} --server={{ .K8sHost }} --insecure-skip-tls-verify=true{{ .Suffix2 }}kubectl config set-credentials {{ .MachineName}} --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context {{ .MachineName }} --user={{ .MachineName}} --cluster={{ .MachineName }}{{ .Suffix2 }}kubectl config use-context {{ .MachineName}}{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
+	envTmpl = `kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --insecure-skip-tls-verify=false{{ .Suffix2 }}kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --certificate-authority={{ .DockerCertPath }}/ca.pem{{ .Suffix2 }}kubectl config set-credentials kuser --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context {{.MachineName }} --user=kuser --cluster={{ .MachineName }}{{ .Suffix2 }}kubectl config use-context {{ .MachineName }}{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
 )
 
 var (
-	improperEnvArgsError = errors.New("Error: Expected either one machine name, or -u flag to unset the variables in the arguments.")
+	errImproperEnvArgs = errors.New("Error: Expected either one machine name, or -u flag to unset the variables in the arguments")
 )
 
 type ShellConfig struct {
@@ -35,20 +37,23 @@ type ShellConfig struct {
 	NoProxyValue    string
 }
 
-func cmdEnv(c *cli.Context) {
+func cmdEnv(c *cli.Context) error {
 	// Ensure that log messages always go to stderr when this command is
 	// being run (it is intended to be run in a subshell)
 	log.SetOutWriter(os.Stderr)
 
 	if len(c.Args()) != 1 && !c.Bool("unset") {
-		fatal(improperEnvArgsError)
+		return errImproperEnvArgs
 	}
 
-	h := getFirstArgHost(c)
-
-	dockerHost, authOptions, err := runConnectionBoilerplate(h, c)
+	host, err := getFirstArgHost(c)
 	if err != nil {
-		fatalf("Error running connection boilerplate: %s", err)
+		return err
+	}
+
+	dockerHost, _, err := runConnectionBoilerplate(host, c)
+	if err != nil {
+		return fmt.Errorf("Error running connection boilerplate: %s", err)
 	}
 
 
@@ -56,35 +61,35 @@ func cmdEnv(c *cli.Context) {
 	mParts = strings.Split(mParts[1], ":")
 
 	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
-	k8sToken := h.HostOptions.KubernetesOptions.K8SToken
+	k8sToken := host.HostOptions.KubernetesOptions.K8SToken
 
 	userShell := c.String("shell")
 	if userShell == "" {
 		shell, err := detectShell()
 		if err != nil {
-			fatal(err)
+			return err
 		}
 		userShell = shell
 	}
 
 	t := template.New("envConfig")
 
-	usageHint := generateUsageHint(c.App.Name, c.Args().First(), userShell)
+	usageHint := generateUsageHint(userShell, os.Args)
 
 	shellCfg := &ShellConfig{
-		DockerCertPath:  authOptions.CertDir,
+		DockerCertPath:  filepath.Join(mcndirs.GetMachineDir(), host.Name),
 		DockerHost:      dockerHost,
         K8sHost:         k8sHost,
         K8sToken:		 k8sToken,
 		DockerTLSVerify: "1",
 		UsageHint:       usageHint,
-		MachineName:     h.Name,
+		MachineName:     host.Name,
 	}
 
 	if c.Bool("no-proxy") {
-		ip, err := h.Driver.GetIP()
+		ip, err := host.Driver.GetIP()
 		if err != nil {
-			fatalf("Error getting host IP: %s", err)
+			return fmt.Errorf("Error getting host IP: %s", err)
 		}
 
 		// first check for an existing lower case no_proxy var
@@ -138,13 +143,10 @@ func cmdEnv(c *cli.Context) {
 
 		tmpl, err := t.Parse(envTmpl)
 		if err != nil {
-			fatal(err)
+			return err
 		}
 
-		if err := tmpl.Execute(os.Stdout, shellCfg); err != nil {
-			fatal(err)
-		}
-		return
+		return tmpl.Execute(os.Stdout, shellCfg)
 	}
 
 	switch userShell {
@@ -157,7 +159,7 @@ func cmdEnv(c *cli.Context) {
 		shellCfg.Suffix = "\"\n"
 		shellCfg.Delimiter = " = \""
 	case "cmd":
-		shellCfg.Prefix = "set "
+		shellCfg.Prefix = "SET "
 		shellCfg.Suffix = "\n"
 		shellCfg.Delimiter = "="
 	default:
@@ -169,38 +171,29 @@ func cmdEnv(c *cli.Context) {
 
 	tmpl, err := t.Parse(envTmpl)
 	if err != nil {
-		fatal(err)
+		return err
 	}
 
-	if err := tmpl.Execute(os.Stdout, shellCfg); err != nil {
-		fatal(err)
-	}
+	return tmpl.Execute(os.Stdout, shellCfg)
 }
 
-func generateUsageHint(appName, machineName, userShell string) string {
+func generateUsageHint(userShell string, args []string) string {
 	cmd := ""
+	comment := "#"
+
+	commandLine := strings.Join(args, " ")
+
 	switch userShell {
 	case "fish":
-		if machineName != "" {
-			cmd = fmt.Sprintf("eval (%s env %s)", appName, machineName)
-		} else {
-			cmd = fmt.Sprintf("eval (%s env)", appName)
-		}
+		cmd = fmt.Sprintf("eval (%s)", commandLine)
 	case "powershell":
-		if machineName != "" {
-			cmd = fmt.Sprintf("%s env --shell=powershell %s | Invoke-Expression", appName, machineName)
-		} else {
-			cmd = fmt.Sprintf("%s env --shell=powershell | Invoke-Expression", appName)
-		}
+		cmd = fmt.Sprintf("%s | Invoke-Expression", commandLine)
 	case "cmd":
-		cmd = "copy and paste the above values into your command prompt"
+		cmd = fmt.Sprintf("\tFOR /f \"tokens=*\" %%i IN ('%s') DO %%i", commandLine)
+		comment = "REM"
 	default:
-		if machineName != "" {
-			cmd = fmt.Sprintf("eval \"$(%s env %s)\"", appName, machineName)
-		} else {
-			cmd = fmt.Sprintf("eval \"$(%s env)\"", appName)
-		}
+		cmd = fmt.Sprintf("eval \"$(%s)\"", commandLine)
 	}
 
-	return fmt.Sprintf("# Run this command to configure your shell: \n# %s\n", cmd)
+	return fmt.Sprintf("%s Run this command to configure your shell: \n%s %s\n", comment, comment, cmd)
 }

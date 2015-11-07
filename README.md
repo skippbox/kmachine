@@ -103,6 +103,33 @@ c626b5467b14        gcr.io/google_containers/pause:0.8.0        "/pause"        
 root@skippbox:~# 
 ```
 
+Documentation
+-------------
+
+kmachine is currently rebased on docker-machine 0.5.0 (latest) and all drivers are used the same way.
+
+Build
+-----
+
+The build mechanism is identical to docker-machine, you need a Docker host and then:
+
+```console
+$ export USE_CONTAINER=true
+$ make cross
+```
+
+or specify your OS and ARCH
+
+```console
+$ TARGET_OS=darwin TARGET_ARCH="amd64" make
+```
+
+The binaries will be in the `build` directory and you will be able to test them with:
+
+```console
+$ PATH=$PWD:$PATH ./kmachine create -d digitalocean foobar
+```
+
 Support
 -------
 

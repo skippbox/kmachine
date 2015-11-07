@@ -166,7 +166,16 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
         return err
     }
 
+    kubeletConfig, err := GenerateKubeletConfig(machine, targetDir)
+    if err != nil {
+        return err
+    }
+
     /* TOOD: The target manifest directory should be a parameter throughout here */
+    if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", kubeletConfig, "/etc/kubernetes/kubelet.kubeconfig")); err != nil {
+        return err
+    }
+
     if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", configFile, "/etc/kubernetes/manifests/kubernetes.yaml")); err != nil {
         return err
     }
@@ -177,6 +186,44 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
     }
 
     return nil
+}
+
+func GenerateKubeletConfig(name string, targetDir string) (string, error) {
+    type ConfigDetails struct {
+        ClusterName   string
+        CertDir       string
+    }
+
+    details := ConfigDetails{name, targetDir}
+    var result bytes.Buffer
+
+    kubeletConfigTmpl := `apiVersion: v1
+kind: Config
+clusters:
+  - cluster:
+      certificate-authority: {{.CertDir}}/ca.pem
+      server: https://127.0.0.1:6443
+    name: {{.ClusterName}}
+contexts:
+  - context:
+      cluster: {{.ClusterName}}
+      user: kubelet
+    name: {{.ClusterName}}
+users:
+  - name: kubelet
+    user:
+      client-certificate: {{.CertDir}}/kubelet/cert.pem
+      client-key: {{.CertDir}}/kubelet/key.pem`
+
+    t, err := template.New("kubeletConfigTmpl").Parse(kubeletConfigTmpl)
+    if err != nil {
+        return "", err
+    }
+
+    err = t.Execute(&result, details)
+
+    return result.String(), err
+
 }
 
 func Generatek8sManifest(name string, targetDir string) (string, error) {
@@ -267,7 +314,7 @@ spec:
         return "", err
     }
 
-   err = t.Execute(&result, details)
+    err = t.Execute(&result, details)
 
     return result.String(), err
 }

@@ -56,7 +56,6 @@ func fixPermissions(p Provisioner, certPath string, targetPath string) error {
 func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions, authOptions auth.AuthOptions) (error) {
     log.Info("Configuring kubernetes...")
 
-    /* CAB: Test theory that we can force an update by pushing a new manifest */
     if _, err := p.SSHCommand("sudo /bin/sh /usr/local/etc/init.d/kubelet stop"); err != nil {
         log.Info("Errored while attempting to stop the kubelet: %s", err)
     }

@@ -1,128 +1,110 @@
-# Docker Machine
+Kubernetes Machine (`kmachine`)
+===============================
 
-![](/docs/img/logo.png)
-
-Machine lets you create Docker hosts on your computer, on cloud providers, and
+Kmachine lets you create Docker hosts on your computer, on cloud providers, and
 inside your own data center. It creates servers, installs Docker on them, then
 configures the Docker client to talk to them.
+
+Kmachine differs from Docker machine by also setting up a Kubernetes standalone system.
+Each component of Kubernetes are started as Docker containers. Kmachine returns the configuration
+information necessary for `kubectl` to communicate to this remote k8s endpoint.
+
+Kmachine is a work in progress but already does a lot.
+
+Kmachine can be used to create your Docker hosts, the functionalities of `docker-machine` are preserved.
 
 It works a bit like this:
 
 ```console
-$ docker-machine create -d virtualbox dev
-Creating CA: /home/username/.docker/machine/certs/ca.pem
-Creating client certificate: /home/username/.docker/machine/certs/cert.pem
-Image cache does not exist, creating it at /home/username/.docker/machine/cache...
-No default boot2docker iso found locally, downloading the latest release...
-Downloading https://github.com/boot2docker/boot2docker/releases/download/v1.6.2/boot2docker.iso to /home/username/.docker/machine/cache/boot2docker.iso...
-Creating VirtualBox VM...
-Creating SSH key...
-Starting VirtualBox VM...
-Starting VM...
-To see how to connect Docker to this machine, run: docker-machine env dev
-
-$ docker-machine ls
-NAME   ACTIVE   DRIVER       STATE     URL                         SWARM
-dev    *        virtualbox   Running   tcp://192.168.99.127:2376
-
-$ eval "$(docker-machine env dev)"
-
-$ docker run busybox echo hello world
-Unable to find image 'busybox:latest' locally
-511136ea3c5a: Pull complete
-df7546f9f060: Pull complete
-ea13149945cb: Pull complete
-4986bf8c1536: Pull complete
-hello world
-
-$ docker-machine create -d digitalocean --digitalocean-access-token=secret staging
-Creating SSH key...
-Creating Digital Ocean droplet...
-To see how to connect Docker to this machine, run: docker-machine env staging
-
-$ docker-machine ls
-NAME      ACTIVE   DRIVER         STATE     URL                          SWARM
-dev                virtualbox     Running   tcp://192.168.99.127:2376
-staging   *        digitalocean   Running   tcp://104.236.253.181:2376
+$ kmachine create -d digitalocean skippbox
+Running pre-create checks...
+Creating machine...
+Waiting for machine to be running, this may take a few minutes...
+Machine is running, waiting for SSH to be available...
+Detecting operating system of created instance...
+Provisioning created instance...
+Copying certs to the local machine directory...
+Copying certs to the remote machine...
+Setting Docker configuration on the remote daemon...
+To see how to connect Docker to this machine, run: kmachine env skippbox
 ```
 
-## Installation and documentation
-
-Full documentation [is available here](https://docs.docker.com/machine/).
-
-## Contributing
-
-Want to hack on Machine? Please start with the [Contributing Guide](https://github.com/docker/machine/blob/master/CONTRIBUTING.md).
-
-## Troubleshooting
-
-Docker Machine tries to do the right thing in a variety of scenarios but
-sometimes things do not go according to plan.  Here is a quick troubleshooting
-guide which may help you to resolve of the issues you may be seeing.
-
-Note that some of the suggested solutions are only available on the Docker
-Machine master branch.  If you need them, consider compiling Docker Machine from
-source.  There are also [unofficial pre-compiled master
-binaries](https://docker-machine-builds.evanhazlett.com/latest) hosted by
-[@ehazlett](https://github.com/ehazlett).
-
-#### `docker-machine` hangs
-
-A common issue with Docker Machine is that it will hang when attempting to start
-up the virtual machine.  Since starting the machine is part of the `create`
-process, `create` is often where these types of errors show up.
-
-A hang could be due to a variety of factors, but the most common suspect is
-networking.  Consider the following:
-
-- Are you using a VPN?  If so, try disconnecting and see if creation will
-  succeed without the VPN.  Some VPN software aggressively controls routes and
-  you may need to [manually add the route](https://github.com/docker/machine/issues/1500#issuecomment-121134958).
-- Are you connected to a proxy server, corporate or otherwise?  If so, take a
-  look at the `--no-proxy` flag for `env` and at [setting environment variables
-  for the created Docker Engine](https://docs.docker.com/machine/reference/create/#specifying-configuration-options-for-the-created-docker-engine).
-- Are there a lot of host-only interfaces listed by the command `VBoxManage list
-  hostonlyifs`?  If so, this has sometimes been known to cause bugs.  Consider
-  removing the ones you are not using (`VBoxManage hostonlyif remove name`) and
-  trying machine creation again.
-
-We are keenly aware of this as an issue and working towards a set of solutions
-which is robust for all users, so please give us feedback and/or report issues,
-workarounds, and desired workflows as you discover them.
-
-#### Machine creation errors out before finishing
-
-If you see messages such as "exit status 1" creating machines with VirtualBox,
-this frequently indicates that there is an issue with VirtualBox itself.  Please
-[file an issue](https://github.com/docker/machine/issues/new) and include a link
-to a [Github Gist](https://gist.github.com/) with the output of the VirtualBox
-log (usually located at
-`$HOME/.docker/machine/machines/machinename/machinename/Logs/VBox.log`), as well
-as the output of running the Docker Machine command which is failing with the
-global `--debug` flag enabled.  This will help us to track down which versions
-of VirtualBox are failing where, and under which conditions.
-
-If you see messages such as "exit status 255", this frequently indicates there
-has been an issue with SSH.  Please investigate your SSH configuration if you
-have one, and/or [file an issue](https://github.com/docker/machine/issues).
-
-#### "You may be getting rate limited by Github" error message
-
-In order to `create` or `upgrade` virtual machines running Docker, Docker
-Machine will check the Github API for the latest release of the [boot2docker
-operating system](https://github.com/boot2docker/boot2docker).  The Github API
-allows for a small number of unauthenticated requests from a given client, but
-if you share an IP address with many other users (e.g. in an office), you may
-get rate limited by their API, and Docker Machine will error out with messages
-indicating this.
-
-In order to work around this issue, you can [generate a
-token](https://help.github.com/articles/creating-an-access-token-for-command-line-use/)
-and pass it to Docker Machine using the global `--github-api-token` flag like
-so:
+Once the machine is created, just like with `docker-machine` you can get some environment variables that will allow you to use it easily.
+Note that with `kmachine`, we return some instructions that `kubectl` can use to define a new k8s context.
 
 ```console
-$ docker-machine --github-api-token=token create -d virtualbox newbox
+$ kmachine env skippbox
+kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --insecure-skip-tls-verify=false
+kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --certificate-authority=/Users/sebgoa/.docker/machine/machines/skippbox/ca.pem
+kubectl config set-credentials kuser --token=IHqC9JMhWOHnFFlr2cO3tBpGGAXzDqYx
+kubectl config set-context skippbox --user=kuser --cluster=skippbox
+kubectl config use-context skippbox
+export DOCKER_TLS_VERIFY="1"
+export DOCKER_HOST="tcp://159.203.140.251:2376"
+export DOCKER_CERT_PATH="/Users/sebgoa/.docker/machine/machines/skippbox"
+export DOCKER_MACHINE_NAME="skippbox"
+# Run this command to configure your shell: 
+# eval "$(kmachine env skippbox)"
 ```
 
-This should eliminate any issues you've been experiencing with rate limiting.
+The authentication token is auto-generated, and the certificates are put in place for proper TLS communication with the k8s API server.
+Once this new context is set you see it with `kubectl config view`
+
+```console
+$ eval "$(kmachine env skippbox)"
+$ kubectl config view
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /Users/sebgoa/.docker/machine/machines/skippbox/ca.pem
+    server: https://159.203.140.251:6443
+  name: skippbox
+contexts:
+- context:
+    cluster: skippbox
+    user: kuser
+  name: skippbox
+current-context: skippbox
+kind: Config
+preferences: {}
+users:
+- name: kuser
+  user:
+    token: IHqC9JMhWOHnFFlr2cO3tBpGGAXzDqYx
+```
+
+Note that since the functionalities of `docker-machine` are preserved you will have an easy into your kmachine via SSH:
+
+```console
+$ kmachine ssh skippbox
+Welcome to Ubuntu 14.04.3 LTS (GNU/Linux 3.13.0-57-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com/
+
+  System information as of Sat Nov  7 11:08:54 EST 2015
+
+  System load:  0.86              Processes:              72
+  Usage of /:   9.2% of 19.56GB   Users logged in:        0
+  Memory usage: 18%               IP address for eth0:    159.203.140.251
+  Swap usage:   0%                IP address for docker0: 172.17.0.1
+
+  Graph this data and manage this system at:
+    https://landscape.canonical.com/
+
+root@skippbox:~# docker ps
+CONTAINER ID        IMAGE                                       COMMAND                  CREATED             STATUS              PORTS               NAMES
+3ed51c981f54        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube scheduler"   22 minutes ago      Up 22 minutes                           k8s_scheduler.6346e99c_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_35e95afb
+305cb84717c8        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube proxy --m"   22 minutes ago      Up 22 minutes                           k8s_proxy.7d0a1297_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_0d5cb791
+6b23bfaee4b8        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube apiserver"   22 minutes ago      Up 22 minutes                           k8s_apiserver.f4a937b5_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_71cab2d1
+f45185c25100        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube controlle"   22 minutes ago      Up 22 minutes                           k8s_controller-manager.7a35f0b6_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_40b06c2e
+94c9bff59658        b.gcr.io/kuar/etcd:2.1.1                    "/etcd --data-dir=/va"   22 minutes ago      Up 22 minutes                           k8s_etcd.92bf0224_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_81ff2e71
+c626b5467b14        gcr.io/google_containers/pause:0.8.0        "/pause"                 22 minutes ago      Up 22 minutes                           k8s_POD.e4cc795_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_5079623e
+8b7eee9ead53        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube kubelet -"   22 minutes ago      Up 22 minutes                           master
+root@skippbox:~# 
+```
+
+Support
+-------
+
+If you experience problems with `kmachine` or want to suggest improvements please file an [issue](https://github.com/skippbox/machine/issues).
+

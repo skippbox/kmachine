@@ -1,5 +1,5 @@
 # Project name, used to name the binaries
-PKG_NAME := docker-machine
+PKG_NAME := kmachine
 # Github infos
 GITHUB_INFO := $(shell git config --get remote.origin.url | sed -e 's/.*:\(.*\).git/\1/')
 GH_USER ?= $(shell echo $(GITHUB_INFO) | cut -d \/ -f 1)

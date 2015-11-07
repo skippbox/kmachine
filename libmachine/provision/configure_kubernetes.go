@@ -242,6 +242,8 @@ spec:
         - "--insecure-port=8080"
         - "--secure-port=6443"
         - "--etcd-servers=http://127.0.0.1:2379"
+        - "--tls-cert-file={{.CertDir}}/apiserver/cert.pem"
+        - "--tls-private-key-file={{.CertDir}}/apiserver/key.pem"
         - "--v=2"
     - name: "proxy"
       image: "gcr.io/google_containers/hyperkube:v1.0.3"

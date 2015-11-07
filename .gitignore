@@ -1,4 +1,5 @@
 docker-machine*
+kmachine_*
 *.log
 *.iml
 .idea/

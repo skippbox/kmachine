@@ -211,7 +211,7 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "machine,1000", "/tmp/tokenfile.txt")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "kmachine,0", "/tmp/tokenfile.txt")); err != nil {
 		return err
 	}
 

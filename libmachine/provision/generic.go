@@ -17,6 +17,7 @@ type GenericProvisioner struct {
 	DockerOptionsDir  string
 	DaemonOptionsFile string
 	KubernetesManifestFile string
+    KubernetesKubeletPath string
 	Packages          []string
 	OsReleaseInfo     *OsRelease
 	Driver            drivers.Driver
@@ -76,15 +77,44 @@ func (provisioner *GenericProvisioner) GetKubernetesOptions() kubernetes.Kuberne
 }
 
 func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error) {
+    type ConfigDetails struct {
+        ClusterName string
+        CertDir string
+    }
+
 	var (
 		k8sCfg bytes.Buffer
+        k8sKubeletCfg bytes.Buffer
 	)
+
+    configParams := ConfigDetails{
+        provisioner.Driver.GetMachineName(),
+        provisioner.KubernetesOptions.K8SCertPath,
+    }
+
+    k8sKubeletConfigTmpl := `apiVersion: v1
+kind: Config
+clusters:
+  - cluster:
+      certificate-authority: {{.CertDir}}/ca.pem
+      server: https://127.0.0.1:6443
+    name: {{.ClusterName}}
+contexts:
+  - context:
+      cluster: {{.ClusterName}}
+      user: kubelet
+    name: {{.ClusterName}}
+users:
+  - name: kubelet
+    user:
+      client-certificate: {{.CertDir}}/kubelet/cert.pem
+      client-key: {{.CertDir}}/kubelet/key.pem`
 
 	k8sConfigTmpl := `
 {
 "apiVersion": "v1",
 "kind": "Pod",
-"metadata": {"name":"kubernetes123"},
+"metadata": {"name":"{{.ClusterName}}"},
 "spec":{
   "hostNetwork": true,
   "containers":[
@@ -115,16 +145,27 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
       "volumeMounts": [ 
          {"name": "token-volume",
           "mountPath": "/tmp/tokenfile.txt",
-          "readOnly": true } 
+          "readOnly": true },
+         {"name": "certs",
+          "mountPath": "{{.CertDir}}",
+          "readOnly": true },
+          {"name": "policies",
+          "mountPath": "/etc/kubernetes/policies",
+          "readOnly": true }
           ],
       "args": [
               "/hyperkube",
               "apiserver",
               "--token-auth-file=/tmp/tokenfile.txt",
+              "--client-ca-file=/var/run/kubernetes/ca.pem",
               "--allow-privileged=true",
               "--service-cluster-ip-range=10.0.20.0/24",
               "--insecure-bind-address=0.0.0.0",
+              "--insecure-port=8080",
+              "--secure-port=6443",
               "--etcd-servers=http://127.0.0.1:2379",
+              "--tls-cert-file={{.CertDir}}/apiserver/cert.pem",
+              "--tls-private-key-file={{.CertDir}}/apiserver/key.pem",
               "--v=2"
         ]
     },
@@ -156,8 +197,16 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
     { "name": "token-volume",
       "hostPath": {
         "path": "/tmp/tokenfile.txt"}
+    }, { "name": "certs",
+      "hostPath": {
+        "path": "{{.CertDir}}"
+      }
+    }, { "name": "policies",
+        "hostPath": {
+            "path": "/etc/kubernetes/policies"
+        }
     }
- ]
+  ]
  }
 }
 `
@@ -166,17 +215,28 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 		return nil, err
 	}
 
+    kt, err := template.New("k8sKubeletConfig").Parse(k8sKubeletConfigTmpl)
+    if err != nil {
+        return nil, err
+    }
+
+	/*
 	k8sContext := EngineConfigContext{
 		DockerPort:    1234,
 		AuthOptions:   provisioner.AuthOptions,
 		EngineOptions: provisioner.EngineOptions,
 	}
+	*/
 
-	t.Execute(&k8sCfg, k8sContext)
+	//t.Execute(&k8sCfg, k8sContext)
+    t.Execute(&k8sCfg, configParams)
+    kt.Execute(&k8sKubeletCfg, configParams)
 
 	return &k8sOptions{
 		k8sOptions:     k8sCfg.String(),
 		k8sOptionsPath: provisioner.KubernetesManifestFile,
+        k8sKubeletCfg:  k8sKubeletCfg.String(),
+        k8sKubeletPath: provisioner.KubernetesKubeletPath,
 	}, nil
 }
 

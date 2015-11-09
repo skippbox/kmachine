@@ -196,6 +196,11 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
   }
 
   /* TOOD: The target manifest directory should be a parameter throughout here */
+  /* Ensure that the kubernetes configuration directory exists */
+  if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p /etc/kubernetes/manifests")); err != nil {
+      return err
+  }
+
   if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", kubeletConfig, "/etc/kubernetes/kubelet.kubeconfig")); err != nil {
       return err
   }

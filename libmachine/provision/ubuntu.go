@@ -148,13 +148,13 @@ func (provisioner *UbuntuProvisioner) Provision(k8sOptions kubernetes.Kubernetes
 		return err
 	}
 
-	if err := installk8sGeneric(provisioner); err != nil {
-		return err
-	}
-
 	provisioner.AuthOptions = setRemoteAuthOptions(provisioner)
 
 	if err := ConfigureAuth(provisioner); err != nil {
+		return err
+	}
+
+	if err := installk8sGeneric(provisioner); err != nil {
 		return err
 	}
 

@@ -15,6 +15,9 @@ Kmachine can be used to create your Docker hosts, the functionalities of `docker
 
 It works a bit like this:
 
+Digital Ocean
+-------------
+
 ```console
 $ docker-machine create -d digitalocean skippbox
 Running pre-create checks...
@@ -101,6 +104,71 @@ f45185c25100        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube cont
 c626b5467b14        gcr.io/google_containers/pause:0.8.0        "/pause"                 22 minutes ago      Up 22 minutes                           k8s_POD.e4cc795_kubernetes123-127.0.0.1_default_6fde80142812f40cf848367ebaeef544_5079623e
 8b7eee9ead53        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube kubelet -"   22 minutes ago      Up 22 minutes                           master
 root@skippbox:~# 
+```
+
+VirtualBox
+----------
+
+```console
+$ ./docker-machine create -d virtualbox --virtualbox-boot2docker-url=https://github.com/skippbox/boot2k8s/releases/download/v1.0.3-rc.1/boot2k8s.iso foobar
+Running pre-create checks...
+Creating machine...
+Waiting for machine to be running, this may take a few minutes...
+Machine is running, waiting for SSH to be available...
+Detecting operating system of created instance...
+Provisioning created instance...
+Copying certs to the local machine directory...
+Copying certs to the remote machine...
+Setting Docker configuration on the remote daemon...
+Configuring kubernetes...
+Copying certs to the remote system...
+To see how to connect Docker to this machine, run: ./docker-machine env foobar
+```
+
+Update your local configuration and you are ready to use Kubernetes.
+
+```console
+./docker-machine env foobar
+kubectl config set-cluster foobar --server=https://192.168.99.111:6443 --insecure-skip-tls-verify=false
+kubectl config set-cluster foobar --server=https://192.168.99.111:6443 --certificate-authority=/Users/sebastiengoasguen/.docker/machine/machines/foobar/ca.pem
+kubectl config set-credentials kuser --token=IeDQCuzjHkmq70wqa35u6vygAVdTB6Ml
+kubectl config set-context foobar --user=kuser --cluster=foobar
+kubectl config use-context foobar
+export DOCKER_TLS_VERIFY="1"
+export DOCKER_HOST="tcp://192.168.99.111:2376"
+export DOCKER_CERT_PATH="/Users/sebastiengoasguen/.docker/machine/machines/foobar"
+export DOCKER_MACHINE_NAME="foobar"
+# Run this command to configure your shell: 
+# eval "$(./docker-machine env foobar)"
+```
+
+Since it is fully compatible with `docker-machine`, things like getting to your machine via SSH work:
+
+```console
+$ ./docker-machine ssh foobar
+                        ##         .
+                  ## ## ##        ==
+               ## ## ## ## ##    ===
+           /"""""""""""""""""\___/ ===
+      ~~~ {~~ ~~~~ ~~~ ~~~~ ~~~ ~ /  ===- ~~~
+           \______ o           __/
+             \    \         __/
+              \____\_______/
+ _                 _   ____     _            _
+| |__   ___   ___ | |_|___ \ __| | ___   ___| | _____ _ __
+| '_ \ / _ \ / _ \| __| __) / _` |/ _ \ / __| |/ / _ \ '__|
+| |_) | (_) | (_) | |_ / __/ (_| | (_) | (__|   <  __/ |
+|_.__/ \___/ \___/ \__|_____\__,_|\___/ \___|_|\_\___|_|
+Boot2Docker version 1.9.0, build master : d81f2f4 - Thu Nov  5 20:40:42 UTC 2015
+Docker version 1.9.0, build 76d6bc9
+docker@foobar:~$ docker ps
+CONTAINER ID        IMAGE                                       COMMAND                  CREATED             STATUS              PORTS               NAMES
+6c9b9b42f336        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube apiserver"   15 minutes ago      Up 15 minutes                           k8s_apiserver.18e5aff9_foobar-foobar_default_89de857e00cf225431816ef4afd91195_8328b012
+abe5dcbc3dd1        b.gcr.io/kuar/etcd:2.1.1                    "/etcd --data-dir=/va"   15 minutes ago      Up 15 minutes                           k8s_etcd.92bf0224_foobar-foobar_default_89de857e00cf225431816ef4afd91195_21051d04
+7b01bf31f701        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube scheduler"   15 minutes ago      Up 15 minutes                           k8s_scheduler.6346e99c_foobar-foobar_default_89de857e00cf225431816ef4afd91195_4a793b67
+26f6f00f79d4        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube proxy --m"   15 minutes ago      Up 15 minutes                           k8s_proxy.7d0a1297_foobar-foobar_default_89de857e00cf225431816ef4afd91195_2165ac73
+a7ceff86eaae        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube controlle"   15 minutes ago      Up 15 minutes                           k8s_controller-manager.7a35f0b6_foobar-foobar_default_89de857e00cf225431816ef4afd91195_daa5ca02
+c00bfdf7fcfa        gcr.io/google_containers/pause:0.8.0        "/pause"                 18 minutes ago      Up 18 minutes                           k8s_POD.e4cc795_foobar-foobar_default_89de857e00cf225431816ef4afd91195_a4f67919
 ```
 
 Documentation

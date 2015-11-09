@@ -16,7 +16,7 @@ Kmachine can be used to create your Docker hosts, the functionalities of `docker
 It works a bit like this:
 
 ```console
-$ kmachine create -d digitalocean skippbox
+$ docker-machine create -d digitalocean skippbox
 Running pre-create checks...
 Creating machine...
 Waiting for machine to be running, this may take a few minutes...
@@ -26,14 +26,14 @@ Provisioning created instance...
 Copying certs to the local machine directory...
 Copying certs to the remote machine...
 Setting Docker configuration on the remote daemon...
-To see how to connect Docker to this machine, run: kmachine env skippbox
+To see how to connect Docker to this machine, run: docker-machine env skippbox
 ```
 
 Once the machine is created, just like with `docker-machine` you can get some environment variables that will allow you to use it easily.
 Note that with `kmachine`, we return some instructions that `kubectl` can use to define a new k8s context.
 
 ```console
-$ kmachine env skippbox
+$ docker-machine env skippbox
 kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --insecure-skip-tls-verify=false
 kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --certificate-authority=/Users/sebgoa/.docker/machine/machines/skippbox/ca.pem
 kubectl config set-credentials kuser --token=IHqC9JMhWOHnFFlr2cO3tBpGGAXzDqYx
@@ -44,14 +44,14 @@ export DOCKER_HOST="tcp://159.203.140.251:2376"
 export DOCKER_CERT_PATH="/Users/sebgoa/.docker/machine/machines/skippbox"
 export DOCKER_MACHINE_NAME="skippbox"
 # Run this command to configure your shell: 
-# eval "$(kmachine env skippbox)"
+# eval "$(docker-machine env skippbox)"
 ```
 
 The authentication token is auto-generated, and the certificates are put in place for proper TLS communication with the k8s API server.
 Once this new context is set you see it with `kubectl config view`
 
 ```console
-$ eval "$(kmachine env skippbox)"
+$ eval "$(docker-machine env skippbox)"
 $ kubectl config view
 apiVersion: v1
 clusters:
@@ -76,7 +76,7 @@ users:
 Note that since the functionalities of `docker-machine` are preserved you will have an easy into your kmachine via SSH:
 
 ```console
-$ kmachine ssh skippbox
+$ docker-machine ssh skippbox
 Welcome to Ubuntu 14.04.3 LTS (GNU/Linux 3.13.0-57-generic x86_64)
 
  * Documentation:  https://help.ubuntu.com/
@@ -107,6 +107,7 @@ Documentation
 -------------
 
 kmachine is currently rebased on docker-machine 0.5.0 (latest) and all drivers are used the same way.
+The binaries are called `docker-machin` but we will get them renamed.
 
 Build
 -----

@@ -121,6 +121,11 @@ var (
 			Usage: "token to pass for authentication with kubernetes",
 			Value: "",
 		},
+		cli.StringFlag{
+			Name: "k8s-user",
+			Usage: "username to use for authentication with kubernetes",
+			Value: "",
+		},
 	}
 )
 
@@ -179,6 +184,11 @@ func cmdCreateInner(c *cli.Context) error {
 		k8sToken = kubernetes.GenerateRandomToken(32)
 	}
 
+	k8sUser := c.String("k8s-user")
+	if k8sUser == "" {
+		k8sUser = name
+	}
+
 	machineDir := filepath.Join(mcndirs.GetMachineDir(), name)
 
 	h.HostOptions = &host.HostOptions{
@@ -214,6 +224,7 @@ func cmdCreateInner(c *cli.Context) error {
 		},
 		KubernetesOptions: &kubernetes.KubernetesOptions {
 			K8SToken:		k8sToken,
+			K8SUser:        k8sUser,
 			K8SCertPath:	"/var/run/kubernetes",
 			K8SAPICert:     kubernetes.GetBase(machineDir, name, "api") + "cert.pem",
 			K8SAPIKey:      kubernetes.GetBase(machineDir, name, "api") + "key.pem",

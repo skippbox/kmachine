@@ -8,6 +8,7 @@ import (
 
 type KubernetesOptions struct {
     K8SToken        string
+    K8SUser         string
     K8SCertPath     string
     K8SAPICert      string
     K8SAPIKey       string

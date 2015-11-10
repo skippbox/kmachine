@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	envTmpl = `kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --insecure-skip-tls-verify=false{{ .Suffix2 }}kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --certificate-authority={{ .DockerCertPath }}/ca.pem{{ .Suffix2 }}kubectl config set-credentials kuser --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context {{.MachineName }} --user=kuser --cluster={{ .MachineName }}{{ .Suffix2 }}kubectl config use-context {{ .MachineName }}{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
+	envTmpl = `kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --insecure-skip-tls-verify=false{{ .Suffix2 }}kubectl config set-cluster {{.MachineName }} --server={{ .K8sHost }} --certificate-authority={{ .DockerCertPath }}/ca.pem{{ .Suffix2 }}kubectl config set-credentials {{ .K8sUser }} --token={{ .K8sToken }}{{ .Suffix2 }}kubectl config set-context {{.MachineName }} --user={{ .K8sUser }} --cluster={{ .MachineName }}{{ .Suffix2 }}kubectl config use-context {{ .MachineName }}{{ .Suffix2 }}{{ .Prefix }}DOCKER_TLS_VERIFY{{ .Delimiter }}{{ .DockerTLSVerify }}{{ .Suffix }}{{ .Prefix }}DOCKER_HOST{{ .Delimiter }}{{ .DockerHost }}{{ .Suffix }}{{ .Prefix }}DOCKER_CERT_PATH{{ .Delimiter }}{{ .DockerCertPath }}{{ .Suffix }}{{ .Prefix }}DOCKER_MACHINE_NAME{{ .Delimiter }}{{ .MachineName }}{{ .Suffix }}{{ if .NoProxyVar }}{{ .Prefix }}{{ .NoProxyVar }}{{ .Delimiter }}{{ .NoProxyValue }}{{ .Suffix }}{{end}}{{ .UsageHint }}`
 )
 
 var (
@@ -30,6 +30,7 @@ type ShellConfig struct {
 	DockerHost      string
 	K8sHost			string
 	K8sToken		string
+	K8sUser			string
 	DockerTLSVerify string
 	UsageHint       string
 	MachineName     string
@@ -62,6 +63,7 @@ func cmdEnv(c *cli.Context) error {
 
 	k8sHost := fmt.Sprintf("https://%s:6443", mParts[0])
 	k8sToken := host.HostOptions.KubernetesOptions.K8SToken
+	k8sUser := host.HostOptions.KubernetesOptions.K8SUser
 
 	userShell := c.String("shell")
 	if userShell == "" {
@@ -81,6 +83,7 @@ func cmdEnv(c *cli.Context) error {
 		DockerHost:      dockerHost,
         K8sHost:         k8sHost,
         K8sToken:		 k8sToken,
+        K8sUser:         k8sUser,
 		DockerTLSVerify: "1",
 		UsageHint:       usageHint,
 		MachineName:     host.Name,

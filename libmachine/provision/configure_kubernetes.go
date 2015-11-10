@@ -1,17 +1,17 @@
 package provision
 
 import (
-    "bytes"
-    "fmt"
+  "bytes"
+  "fmt"
 	"io/ioutil"
 	"path"
-    "strings"
-    "text/template"
+  "strings"
+  "text/template"
 
-    "github.com/docker/machine/libmachine/auth"
-    "github.com/docker/machine/libmachine/cert"
-    "github.com/docker/machine/libmachine/kubernetes"
-    "github.com/docker/machine/libmachine/log"
+  "github.com/docker/machine/libmachine/auth"
+  "github.com/docker/machine/libmachine/cert"
+  "github.com/docker/machine/libmachine/kubernetes"
+  "github.com/docker/machine/libmachine/log"
 )
 
 func xferCert(p Provisioner, certPath string, targetPath string) error {
@@ -115,7 +115,7 @@ func GenerateCertificates(p Provisioner, k8sOptions kubernetes.KubernetesOptions
     return err
   }
 
-  if _, err := p.SSHCommand(fmt.Sprintf("printf '%q,%s,%d' |sudo tee %s", k8sOptions.K8SToken, "kuser",0,path.Join(targetDir, "tokenfile.txt"))); err != nil {
+  if _, err := p.SSHCommand(fmt.Sprintf("printf '%q,%s,%d' |sudo tee %s", k8sOptions.K8SToken, k8sOptions.K8SUser, 0, path.Join(targetDir, "tokenfile.txt"))); err != nil {
     return err
   }
 
@@ -195,6 +195,11 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
       return err
   }
 
+  policyFile, err := GeneratePolicyFile(k8sOptions.K8SUser)
+  if err != nil {
+    return err
+  }
+
   /* TOOD: The target manifest directory should be a parameter throughout here */
   /* Ensure that the kubernetes configuration directory exists */
   if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p /etc/kubernetes/manifests")); err != nil {
@@ -209,12 +214,46 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
       return err
   }
 
+  /* Generate the policy file */
+  if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", policyFile, "/etc/kubernetes/policies/policy.jsonl")); err != nil {
+      return err
+  }  
+
 	/* Lastly, start the kubelet */
     if _, err := p.SSHCommand("sudo /bin/sh /usr/local/etc/init.d/kubelet start"); err != nil {
         return err
     }
 
     return nil
+}
+
+func GeneratePolicyFile(name string) (string, error) {
+  type ConfigDetails struct {
+    Username string
+  }
+  var result bytes.Buffer
+
+  details := ConfigDetails{name}
+  policyTmpl := `{"user":"{{.Username}}"}
+{"user":"scheduler", "readonly": true, "resource": "pods"}
+{"user":"scheduler", "resource": "bindings"}
+{"user":"proxy", "resource": "services"}
+{"user":"proxy", "resource": "endpoints"}
+{"user":"kubelet",  "resource": "pods"}
+{"user":"kubelet",  "resource": "nodes"}
+{"user":"kubelet",  "readonly": true, "resource": "services"}
+{"user":"kubelet",  "readonly": true, "resource": "endpoints"}
+{"user":"kubelet", "resource": "events"}
+}`
+
+  t, err := template.New("PolicyTmpl").Parse(policyTmpl)
+  if err != nil {
+      return "", err
+  }
+
+  err = t.Execute(&result, details)
+
+  return result.String(), err
 }
 
 func GenerateKubeletConfig(name string, targetDir string) (string, error) {
@@ -252,7 +291,6 @@ users:
     err = t.Execute(&result, details)
 
     return result.String(), err
-
 }
 
 func Generatek8sManifest(name string, targetDir string) (string, error) {

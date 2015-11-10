@@ -9,7 +9,7 @@ import (
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
 	"github.com/docker/machine/libmachine/swarm"
-    "github.com/docker/machine/libmachine/kubernetes"
+  "github.com/docker/machine/libmachine/kubernetes"
 )
 
 type GenericProvisioner struct {
@@ -17,14 +17,14 @@ type GenericProvisioner struct {
 	DockerOptionsDir  string
 	DaemonOptionsFile string
 	KubernetesManifestFile string
-    KubernetesKubeletPath string
+  KubernetesKubeletPath string
 	Packages          []string
 	OsReleaseInfo     *OsRelease
 	Driver            drivers.Driver
 	AuthOptions       auth.AuthOptions
 	EngineOptions     engine.EngineOptions
 	SwarmOptions      swarm.SwarmOptions
-    KubernetesOptions kubernetes.KubernetesOptions
+  KubernetesOptions kubernetes.KubernetesOptions
 }
 
 func (provisioner *GenericProvisioner) Hostname() (string, error) {
@@ -143,10 +143,7 @@ users:
       "name": "apiserver",
       "image": "gcr.io/google_containers/hyperkube:v1.0.3",
       "volumeMounts": [ 
-         {"name": "token-volume",
-          "mountPath": "/tmp/tokenfile.txt",
-          "readOnly": true },
-         {"name": "certs",
+          {"name": "certs",
           "mountPath": "{{.CertDir}}",
           "readOnly": true },
           {"name": "policies",
@@ -156,7 +153,7 @@ users:
       "args": [
               "/hyperkube",
               "apiserver",
-              "--token-auth-file=/tmp/tokenfile.txt",
+              "--token-auth-file={{.CertDir}}/tokenfile.txt",
               "--client-ca-file=/var/run/kubernetes/ca.pem",
               "--allow-privileged=true",
               "--service-cluster-ip-range=10.0.20.0/24",
@@ -194,10 +191,7 @@ users:
     }
   ],
   "volumes":[
-    { "name": "token-volume",
-      "hostPath": {
-        "path": "/tmp/tokenfile.txt"}
-    }, { "name": "certs",
+    { "name": "certs",
       "hostPath": {
         "path": "{{.CertDir}}"
       }
@@ -215,10 +209,15 @@ users:
 		return nil, err
 	}
 
-    kt, err := template.New("k8sKubeletConfig").Parse(k8sKubeletConfigTmpl)
-    if err != nil {
-        return nil, err
-    }
+  kt, err := template.New("k8sKubeletConfig").Parse(k8sKubeletConfigTmpl)
+  if err != nil {
+      return nil, err
+  }
+
+  k8sPolicyCfg, err := GeneratePolicyFile(provisioner.KubernetesOptions.K8SUser)
+  if err != nil {
+    return nil, err
+  }
 
 	/*
 	k8sContext := EngineConfigContext{
@@ -235,8 +234,9 @@ users:
 	return &k8sOptions{
 		k8sOptions:     k8sCfg.String(),
 		k8sOptionsPath: provisioner.KubernetesManifestFile,
-        k8sKubeletCfg:  k8sKubeletCfg.String(),
-        k8sKubeletPath: provisioner.KubernetesKubeletPath,
+    k8sKubeletCfg:  k8sKubeletCfg.String(),
+    k8sKubeletPath: provisioner.KubernetesKubeletPath,
+    k8sPolicyCfg:   k8sPolicyCfg,
 	}, nil
 }
 

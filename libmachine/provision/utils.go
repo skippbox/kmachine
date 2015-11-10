@@ -29,6 +29,7 @@ type k8sOptions struct {
 	k8sOptionsPath    string
     k8sKubeletCfg     string
     k8sKubeletPath    string
+    k8sPolicyCfg      string
 }
 
 func randToken() string {
@@ -213,21 +214,21 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf \"%s,%s\" | sudo tee %s", p.GetKubernetesOptions().K8SToken, "kmachine,0", "/tmp/tokenfile.txt")); err != nil {
-		return err
-	}
-
 	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sKubeletCfg, "/tmp/kube.conf")); err != nil {
 		return err
 	}
 
-	/* CAB: Generate/copy over the kubernetes certificates */
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sPolicyCfg, "/tmp/policy.jsonl")); err != nil {
+		return err
+	}	
+
 	if err := GenerateCertificates(p, p.GetKubernetesOptions(), p.GetAuthOptions()); err != nil {
 		return err
 	}
 
+
 	log.Debug("launching master")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/kube.conf:/etc/kubernetes/kubelet.kubeconfig -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /tmp/tokenfile.txt:/tmp/tokenfile.txt -v /var/run/kubernetes:/var/run/kubernetes gcr.io/google_containers/hyperkube:v1.0.3 /hyperkube kubelet --allow-privileged=true --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/kube.conf:/etc/kubernetes/kubelet.kubeconfig -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /var/run/kubernetes/tokenfile.txt:/tmp/tokenfile.txt -v /tmp/policy.jsonl:/etc/kubernetes/policies/policy.jsonl -v /var/run/kubernetes:/var/run/kubernetes gcr.io/google_containers/hyperkube:v1.0.3 /hyperkube kubelet --allow-privileged=true --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig")); err != nil {
 		return fmt.Errorf("error installing master")
 	}
 

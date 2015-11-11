@@ -22,7 +22,7 @@ func xferCert(p Provisioner, certPath string, targetPath string) error {
 		return err
 	}
 
-    if _, err := p.SSHCommand(fmt.Sprintf("mkdir -p %s", targetPath)); err != nil {
+    if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p %s", targetPath)); err != nil {
       return err
     }
 
@@ -111,7 +111,7 @@ func GenerateCertificates(p Provisioner, k8sOptions kubernetes.KubernetesOptions
   log.Info("Copying certs to the remote system...")
 
   /* Kick off the kubernetes run */
-  if _, err := p.SSHCommand(fmt.Sprintf("mkdir -p %s", targetDir)); err != nil {
+  if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p %s", targetDir)); err != nil {
     return err
   }
 

@@ -53,7 +53,7 @@ type B2dUtils struct {
 
 func NewB2dUtils(storePath string) *B2dUtils {
 	imgCachePath := filepath.Join(storePath, "cache")
-	isoFilename := "boot2docker.iso"
+	isoFilename := "boot2k8s.iso"
 
 	return &B2dUtils{
 		storePath:     storePath,
@@ -80,7 +80,7 @@ func (b *B2dUtils) getReleasesRequest(apiUrl string) (*http.Request, error) {
 // FIXME: find or create some other way to get the "latest release" of boot2docker since the GitHub API has a pretty low rate limit on API requests
 func (b *B2dUtils) GetLatestBoot2DockerReleaseURL(apiUrl string) (string, error) {
 	if apiUrl == "" {
-		apiUrl = "https://api.github.com/repos/boot2docker/boot2docker/releases"
+		apiUrl = "https://api.github.com/repos/skippbox/boot2k8s/releases"
 	}
 	isoUrl := ""
 	// match github (enterprise) release urls:
@@ -118,7 +118,7 @@ func (b *B2dUtils) GetLatestBoot2DockerReleaseURL(apiUrl string) (string, error)
 
 		tag := t[0].TagName
 		log.Infof("Latest release for %s/%s/%s is %s\n", host, org, repo, tag)
-		isoUrl = fmt.Sprintf("%s://%s/%s/%s/releases/download/%s/boot2docker.iso", scheme, host, org, repo, tag)
+		isoUrl = fmt.Sprintf("%s://%s/%s/%s/releases/download/%s/boot2k8s.iso", scheme, host, org, repo, tag)
 	} else {
 		//does not match a github releases api url
 		isoUrl = apiUrl
@@ -250,7 +250,7 @@ func (b *B2dUtils) CopyIsoToMachineDir(isoURL, machineName string) error {
 
 func (b *B2dUtils) copyDefaultIsoToMachine(machineIsoPath string) error {
 	if _, err := os.Stat(b.commonIsoPath); os.IsNotExist(err) {
-		log.Info("No default boot2docker iso found locally, downloading the latest release...")
+		log.Info("No default boot2k8s iso found locally, downloading the latest release...")
 		if err := b.DownloadLatestBoot2Docker(""); err != nil {
 			return err
 		}

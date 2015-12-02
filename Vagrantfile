@@ -10,6 +10,10 @@ apt-get -y install wget
 wget -qO- https://get.docker.com/ | sh
 gpasswd -a vagrant docker
 service docker restart
+wget -qO- https://storage.googleapis.com/golang/go1.5.1.linux-amd64.tar.gz | tar xvz -C /usr/local
+su vagrant -c "echo 'PATH=$PATH:/usr/local/go/bin' >> ~/.profile"
+su vagrant -c "echo 'GOPATH=/vagrant/Godeps/_workspace' >> ~/.profile"
+su vagrant -c "echo 'USE_CONTAINER=true' >> ~/.profile"
 SCRIPT
 
 Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|

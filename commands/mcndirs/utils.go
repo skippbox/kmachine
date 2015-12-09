@@ -13,7 +13,7 @@ var (
 
 func GetBaseDir() string {
 	if BaseDir == "" {
-		BaseDir = filepath.Join(mcnutils.GetHomeDir(), ".docker", "machine")
+		BaseDir = filepath.Join(mcnutils.GetHomeDir(), ".kube", "machine")
 	}
 	return BaseDir
 }

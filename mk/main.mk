@@ -57,7 +57,7 @@ plugins: build-plugins
 cross: build-x
 
 install:
-	cp $(PREFIX)/bin/docker-machine $(PREFIX)/bin/docker-machine-driver* /usr/local/bin
+	cp $(PREFIX)/bin/kmachine $(PREFIX)/bin/kmachine-driver* /usr/local/bin
 
 clean: coverage-clean build-clean
 test: dco fmt test-short vet

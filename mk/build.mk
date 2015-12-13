@@ -14,7 +14,7 @@ endef
 # XXX building with -a fails in debug (with -N -l) ????
 
 # Independent targets for every bin
-$(PREFIX)/bin/docker-%: ./cmd/%.go $(shell find . -type f -name '*.go')
+$(PREFIX)/bin/k%: ./cmd/%.go $(shell find . -type f -name '*.go')
 	$(GO) build -o $@$(call extension,$(GOOS)) $(VERBOSE_GO) -tags "$(BUILDTAGS)" -ldflags "$(GO_LDFLAGS)" $(GO_GCFLAGS) $<
 
 # Cross-compilation targets
@@ -22,10 +22,10 @@ build-x-%: ./cmd/%.go $(shell find . -type f -name '*.go')
 	$(foreach GOARCH,$(TARGET_ARCH),$(foreach GOOS,$(TARGET_OS),$(call gocross,$(GOOS),$(GOARCH),$<)))
 
 # Build just machine
-build-machine: $(PREFIX)/bin/docker-machine
+build-machine: $(PREFIX)/bin/kmachine
 
 # Build all plugins
-build-plugins: $(patsubst ./cmd/%.go,$(PREFIX)/bin/docker-%,$(filter-out %_test.go, $(wildcard ./cmd/machine-driver-*.go)))
+build-plugins: $(patsubst ./cmd/%.go,$(PREFIX)/bin/k%,$(filter-out %_test.go, $(wildcard ./cmd/machine-driver-*.go)))
 
 # Overall cross-build
 build-x: $(patsubst ./cmd/%.go,build-x-%,$(filter-out %_test.go, $(wildcard ./cmd/*.go)))

@@ -7,8 +7,8 @@ else ifeq ($(USE_CONTAINER),)
 	include mk/main.mk
 else
 # Otherwise, with docker, swallow all targets and forward into a container
-DOCKER_IMAGE_NAME := "docker-machine-build"
-DOCKER_CONTAINER_NAME := "docker-machine-build-container"
+DOCKER_IMAGE_NAME := "kmachine-build"
+DOCKER_CONTAINER_NAME := "kmachine-build-container"
 
 .ignore:
 	@

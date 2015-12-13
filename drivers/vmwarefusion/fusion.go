@@ -29,7 +29,7 @@ import (
 const (
 	B2DUser        = "docker"
 	B2DPass        = "tcuser"
-	isoFilename    = "boot2docker.iso"
+	isoFilename    = "boot2k8s.iso"
 	isoConfigDrive = "configdrive.iso"
 )
 

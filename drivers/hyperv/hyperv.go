@@ -181,7 +181,7 @@ func (d *Driver) Create() error {
 	command = []string{
 		"Set-VMDvdDrive",
 		"-VMName", d.MachineName,
-		"-Path", fmt.Sprintf("'%s'", d.ResolveStorePath("boot2docker.iso"))}
+		"-Path", fmt.Sprintf("'%s'", d.ResolveStorePath("boot2k8s.iso"))}
 	_, err = execute(command)
 	if err != nil {
 		return err

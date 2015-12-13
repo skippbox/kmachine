@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	isoFilename                = "boot2docker.iso"
+	isoFilename                = "boot2k8s.iso"
 	defaultCPU                 = 1
 	defaultMemory              = 1024
 	defaultBoot2DockerURL      = ""
@@ -355,7 +355,7 @@ func (d *Driver) Create() error {
 		"--port", "0",
 		"--device", "0",
 		"--type", "dvddrive",
-		"--medium", d.ResolveStorePath("boot2docker.iso")); err != nil {
+		"--medium", d.ResolveStorePath("boot2k8s.iso")); err != nil {
 		return err
 	}
 

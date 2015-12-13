@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	isoFilename = "boot2docker.iso"
+	isoFilename = "boot2k8s.iso"
 	B2DISOName  = isoFilename
 	B2DUser     = "docker"
 	B2DPass     = "tcuser"

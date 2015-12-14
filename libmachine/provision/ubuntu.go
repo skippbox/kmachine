@@ -136,6 +136,10 @@ func (provisioner *UbuntuProvisioner) Provision(k8sOptions kubernetes.Kubernetes
 		}
 	}
 
+	if err := upgradeSystem(provisioner); err != nil {
+		return err
+	}
+
 	if err := installDockerGeneric(provisioner, engineOptions.InstallURL); err != nil {
 		return err
 	}

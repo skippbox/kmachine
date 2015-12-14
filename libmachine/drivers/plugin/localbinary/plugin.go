@@ -85,7 +85,7 @@ func (e ErrPluginBinaryNotFound) Error() string {
 }
 
 func NewLocalBinaryPlugin(driverName string) (*LocalBinaryPlugin, error) {
-	binaryPath, err := exec.LookPath(fmt.Sprintf("docker-machine-driver-%s", driverName))
+	binaryPath, err := exec.LookPath(fmt.Sprintf("kmachine-driver-%s", driverName))
 	if err != nil {
 		return nil, ErrPluginBinaryNotFound{driverName}
 	}

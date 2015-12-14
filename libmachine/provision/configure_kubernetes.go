@@ -328,14 +328,14 @@ spec:
         - "--listen-peer-urls=http://127.0.0.1:2380"
         - "--name=etcd"
     - name: "controller-manager"
-      image: "gcr.io/google_containers/hyperkube:v1.0.3"
+      image: "gcr.io/google_containers/hyperkube:v1.1.2"
       args:
         - "/hyperkube"
         - "controller-manager"
         - "--master=http://127.0.0.1:8080"
         - "--v=2"
     - name: "apiserver"
-      image: "gcr.io/google_containers/hyperkube:v1.0.3"
+      image: "gcr.io/google_containers/hyperkube:v1.1.2"
       volumeMounts:
         - name: "certs"
           mountPath: "{{.CertDir}}"
@@ -359,7 +359,7 @@ spec:
         - "--tls-private-key-file={{.CertDir}}/apiserver/key.pem"
         - "--v=2"
     - name: "proxy"
-      image: "gcr.io/google_containers/hyperkube:v1.0.3"
+      image: "gcr.io/google_containers/hyperkube:v1.1.2"
       securityContext:
         privileged: true
       args:
@@ -368,7 +368,7 @@ spec:
         - "--master=http://127.0.0.1:8080"
         - "--v=2"
     - name: "scheduler"
-      image: "gcr.io/google_containers/hyperkube:v1.0.3"
+      image: "gcr.io/google_containers/hyperkube:v1.1.2"
       args:
         - "/hyperkube"
         - "scheduler"

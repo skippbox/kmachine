@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/machine/libmachine/auth"
 	"github.com/docker/machine/libmachine/cert"
+	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/mcnutils"
 	"github.com/docker/machine/libmachine/provision/serviceaction"
@@ -27,15 +28,36 @@ type DockerOptions struct {
 type k8sOptions struct {
 	k8sOptions        string
 	k8sOptionsPath    string
-    k8sKubeletCfg     string
-    k8sKubeletPath    string
-    k8sPolicyCfg      string
+	k8sKubeletCfg     string
+	k8sKubeletPath    string
+	k8sPolicyCfg      string
 }
 
 func randToken() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)
+}
+
+func upgradeSystem(p Provisioner) error {
+	// We need to make sure the image has been upgraded as some later
+	// steps may fail
+	if output, err := p.SSHCommand(fmt.Sprintf("sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::='--force-confdef' -o Dpkg::Options::='--force-confnew' dist-upgrade")); err != nil {
+		return fmt.Errorf("error upgrading aufs image: %s\n", output)
+	}
+
+	fmt.Printf("Rebooting system...\n");
+	if output, err := p.SSHCommand(fmt.Sprintf("sudo reboot")); err != nil {
+		return fmt.Errorf("error rebooting aufs image: %s\n", output)
+	}
+
+	drivers.WaitForSSH(p.GetDriver())
+	
+	if output, err := p.SSHCommand(fmt.Sprintf("sudo apt-get update")); err != nil {
+		return fmt.Errorf("error refreshing packages: %s\n", output)
+	}
+	
+	return nil
 }
 
 func installDockerGeneric(p Provisioner, baseURL string) error {
@@ -220,7 +242,7 @@ func installk8sGeneric(p Provisioner) error {
 
 	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sPolicyCfg, "/tmp/policy.jsonl")); err != nil {
 		return err
-	}	
+	}
 
 	if err := GenerateCertificates(p, p.GetKubernetesOptions(), p.GetAuthOptions()); err != nil {
 		return err
@@ -228,7 +250,7 @@ func installk8sGeneric(p Provisioner) error {
 
 
 	log.Debug("launching master")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --restart=always --name master -v /var/run/docker.sock:/var/run/docker.sock -v /tmp/kube.conf:/etc/kubernetes/kubelet.kubeconfig -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /var/run/kubernetes/tokenfile.txt:/tmp/tokenfile.txt -v /tmp/policy.jsonl:/etc/kubernetes/policies/policy.jsonl -v /var/run/kubernetes:/var/run/kubernetes gcr.io/google_containers/hyperkube:v1.0.3 /hyperkube kubelet --allow-privileged=true --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --pid=host --privileged --restart=always --name head -v /sys:/sys:ro -v /var/run:/var/run:rw -v /:/rootfs:ro -v /dev:/dev -v /var/lib/docker/:/var/lib/docker:ro -v /var/lib/kubelet/:/var/lib/kubelet:rw -v /tmp/kube.conf:/etc/kubernetes/kubelet.kubeconfig -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /var/run/kubernetes/tokenfile.txt:/tmp/tokenfile.txt -v /tmp/policy.jsonl:/etc/kubernetes/policies/policy.jsonl gcr.io/google_containers/hyperkube:v1.1.2 /hyperkube kubelet --cluster-dns=10.0.0.10 --cluster-domain=cluster.local --containerized --allow-privileged=true --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig")); err != nil {
 		return fmt.Errorf("error installing master")
 	}
 

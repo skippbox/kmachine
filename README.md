@@ -1,25 +1,29 @@
 Kubernetes Machine (`kmachine`)
 ===============================
 
-Kmachine lets you create Docker hosts on your computer, on cloud providers, and
+`kmachine` lets you create Docker hosts on your computer, on cloud providers, and
 inside your own data center. It creates servers, installs Docker on them, then
-configures the Docker client to talk to them.
+configures the Docker client to talk to them just like `docker-machine`.
 
-Kmachine differs from Docker machine by also setting up a Kubernetes standalone system.
-Each component of Kubernetes are started as Docker containers. Kmachine returns the configuration
+`kmachine` differs from Docker machine by also setting up a Kubernetes standalone system.
+Each component of Kubernetes are started as Docker containers. `kmachine` returns the configuration
 information necessary for `kubectl` to communicate to this remote k8s endpoint.
 
-Kmachine is a work in progress but already does a lot.
+The functionalities of `docker-machine` are preserved.
 
-Kmachine can be used to create your Docker hosts, the functionalities of `docker-machine` are preserved.
-
-It works a bit like this:
+It works like this:
 
 Digital Ocean
 -------------
 
+You will need an account on [Digital Ocean](https://digitalocean.com) and a TOKEN configured:
+
 ```console
-$ docker-machine create -d digitalocean skippbox
+$ export DIGITALOCEAN_ACCESS_TOKEN=<your token>
+```
+
+```console
+$ kmachine create -d digitalocean skippbox
 Running pre-create checks...
 Creating machine...
 Waiting for machine to be running, this may take a few minutes...
@@ -29,37 +33,39 @@ Provisioning created instance...
 Copying certs to the local machine directory...
 Copying certs to the remote machine...
 Setting Docker configuration on the remote daemon...
-To see how to connect Docker to this machine, run: docker-machine env skippbox
+Configuring kubernetes...
+Copying certs to the remote system...
+To see how to connect Docker to this machine, run: kmachine env skippbox
 ```
 
 Once the machine is created, just like with `docker-machine` you can get some environment variables that will allow you to use it easily.
 Note that with `kmachine`, we return some instructions that `kubectl` can use to define a new k8s context.
 
 ```console
-$ docker-machine env skippbox
+$ kmachine env skippbox
 kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --insecure-skip-tls-verify=false
 kubectl config set-cluster skippbox --server=https://159.203.140.251:6443 --certificate-authority=/Users/sebgoa/.docker/machine/machines/skippbox/ca.pem
 kubectl config set-credentials kuser --token=IHqC9JMhWOHnFFlr2cO3tBpGGAXzDqYx
-kubectl config set-context skippbox --user=kuser --cluster=skippbox
+kubectl config set-context skippbox --user=skippbox --cluster=skippbox
 kubectl config use-context skippbox
 export DOCKER_TLS_VERIFY="1"
 export DOCKER_HOST="tcp://159.203.140.251:2376"
-export DOCKER_CERT_PATH="/Users/sebgoa/.docker/machine/machines/skippbox"
+export DOCKER_CERT_PATH="/Users/sebgoa/.kube/machine/machines/skippbox"
 export DOCKER_MACHINE_NAME="skippbox"
 # Run this command to configure your shell: 
-# eval "$(docker-machine env skippbox)"
+# eval "$(kmachine env skippbox)"
 ```
 
 The authentication token is auto-generated, and the certificates are put in place for proper TLS communication with the k8s API server.
 Once this new context is set you see it with `kubectl config view`
 
 ```console
-$ eval "$(docker-machine env skippbox)"
+$ eval "$(kmachine env skippbox)"
 $ kubectl config view
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority: /Users/sebgoa/.docker/machine/machines/skippbox/ca.pem
+    certificate-authority: /Users/sebgoa/.kube/machine/machines/skippbox/ca.pem
     server: https://159.203.140.251:6443
   name: skippbox
 contexts:
@@ -71,15 +77,15 @@ current-context: skippbox
 kind: Config
 preferences: {}
 users:
-- name: kuser
+- name: skippbox
   user:
     token: IHqC9JMhWOHnFFlr2cO3tBpGGAXzDqYx
 ```
 
-Note that since the functionalities of `docker-machine` are preserved you will have an easy into your kmachine via SSH:
+Note that since the functionalities of `docker-machine` are preserved you will have an easy path into your kmachine via SSH:
 
 ```console
-$ docker-machine ssh skippbox
+$ kmachine ssh skippbox
 Welcome to Ubuntu 14.04.3 LTS (GNU/Linux 3.13.0-57-generic x86_64)
 
  * Documentation:  https://help.ubuntu.com/
@@ -106,46 +112,74 @@ c626b5467b14        gcr.io/google_containers/pause:0.8.0        "/pause"        
 root@skippbox:~# 
 ```
 
+AWS
+---
+
+For Amazon EC2, you need to setup a few environmental variables (just like `docker-machine`), then you are ready to get your kmachine going
+
+```console
+$ export AWS_ACCESS_KEY_ID=<your access key>
+$ export AWS_SECRET_ACCESS_KEY=<your secret key>
+$ export AWS_VPC_ID=<a vpc id>
+$ kmachine create -d amazonec2 aws
+```
+
+Configure your Docker client and kubernetes client.
+
+```console
+$ kmachine env aws
+kubectl config set-cluster aws --server=https://52.30.205.126:6443 --insecure-skip-tls-verify=false
+kubectl config set-cluster aws --server=https://52.30.205.126:6443 --certificate-authority=/Users/sebgoa/.kube/machine/machines/aws/ca.pem
+kubectl config set-credentials aws --token=3PZlrebYeL5voqaMdbQnro27aFhGV6ZN
+kubectl config set-context aws --user=aws --cluster=aws
+kubectl config use-context aws
+export DOCKER_TLS_VERIFY="1"
+export DOCKER_HOST="tcp://52.30.205.126:2376"
+export DOCKER_CERT_PATH="/Users/sebgoa/.kube/machine/machines/aws"
+export DOCKER_MACHINE_NAME="aws"
+# Run this command to configure your shell: 
+# eval "$(kmachine env aws)"
+$ eval "$(kmachine env aws)"
+$ kmachine ls
+NAME   ACTIVE   DRIVER       STATE     URL                         SWARM
+aws    *        amazonec2    Running   tcp://52.30.205.126:2376    
+```
+
+And you are up and running with Kubernetes
+
+```console
+$ kubectl get pods
+NAME            READY     STATUS    RESTARTS   AGE
+aws-127.0.0.1   5/5       Running   0          31s
+```
+
+Note that if you have multiple kmachines, `kubectl` can easily let you switch between them:
+
+```console
+$ kubectl config use-context skippbox
+$ kubectl config use-context aws
+```
+
 VirtualBox
 ----------
 
+For VirtualBox, we use a boot2docker variant called `boot2k8s` being developed on [GitHub](https://github.com/skippbox/boot2k8s) as well.
+
 ```console
-$ ./docker-machine create -d virtualbox --virtualbox-boot2docker-url=https://github.com/skippbox/boot2k8s/releases/download/v1.0.3-rc.1/boot2k8s.iso foobar
-Running pre-create checks...
-Creating machine...
-Waiting for machine to be running, this may take a few minutes...
-Machine is running, waiting for SSH to be available...
-Detecting operating system of created instance...
-Provisioning created instance...
-Copying certs to the local machine directory...
-Copying certs to the remote machine...
-Setting Docker configuration on the remote daemon...
-Configuring kubernetes...
-Copying certs to the remote system...
-To see how to connect Docker to this machine, run: ./docker-machine env foobar
+$ kmachine create -d virtualbox foobar
 ```
 
 Update your local configuration and you are ready to use Kubernetes.
 
 ```console
-./docker-machine env foobar
-kubectl config set-cluster foobar --server=https://192.168.99.111:6443 --insecure-skip-tls-verify=false
-kubectl config set-cluster foobar --server=https://192.168.99.111:6443 --certificate-authority=/Users/sebastiengoasguen/.docker/machine/machines/foobar/ca.pem
-kubectl config set-credentials kuser --token=IeDQCuzjHkmq70wqa35u6vygAVdTB6Ml
-kubectl config set-context foobar --user=kuser --cluster=foobar
-kubectl config use-context foobar
-export DOCKER_TLS_VERIFY="1"
-export DOCKER_HOST="tcp://192.168.99.111:2376"
-export DOCKER_CERT_PATH="/Users/sebastiengoasguen/.docker/machine/machines/foobar"
-export DOCKER_MACHINE_NAME="foobar"
-# Run this command to configure your shell: 
-# eval "$(./docker-machine env foobar)"
+$ kmachine env foobar
+$ eval "$(kmachine env foobar)"
 ```
 
 Since it is fully compatible with `docker-machine`, things like getting to your machine via SSH work:
 
 ```console
-$ ./docker-machine ssh foobar
+$ kmachine ssh foobar
                         ##         .
                   ## ## ##        ==
                ## ## ## ## ##    ===
@@ -175,7 +209,8 @@ Documentation
 -------------
 
 kmachine is currently rebased on docker-machine 0.5.0 (latest) and all drivers are used the same way.
-The binaries are called `docker-machin` but we will get them renamed.
+The binaries are called `kmachine`.
+The configuration files are kept in `~/.kube/machine` so that it does not interfere with an existing installation of `docker-machine`.
 
 Build
 -----

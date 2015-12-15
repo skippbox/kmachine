@@ -11,6 +11,12 @@ information necessary for `kubectl` to communicate to this remote k8s endpoint.
 
 The functionalities of `docker-machine` are preserved.
 
+Download
+--------
+
+Get it from the [release page](https://github.com/skippbox/kmachine/releases)
+
+
 It works like this:
 
 Digital Ocean

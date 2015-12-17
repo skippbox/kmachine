@@ -329,10 +329,16 @@ spec:
         - "--name=etcd"
     - name: "controller-manager"
       image: "gcr.io/google_containers/hyperkube:v1.1.2"
+      volumeMounts:
+        - name: "certs"
+          mountPath: "{{.CertDir}}"
+          readOnly: true
       args:
         - "/hyperkube"
         - "controller-manager"
         - "--master=http://127.0.0.1:8080"
+        - "--service-account-private-key-file={{.CertDir}}/apiserver/key.pem"
+        - "--root-ca-file=/var/run/kubernetes/ca.pem"
         - "--v=2"
     - name: "apiserver"
       image: "gcr.io/google_containers/hyperkube:v1.1.2"
@@ -346,11 +352,11 @@ spec:
       args:
         - "/hyperkube"
         - "apiserver"
-        - "--authorization-mode=AlwaysAllow"
         - "--client-ca-file=/var/run/kubernetes/ca.pem"
         - "--token-auth-file={{.CertDir}}/tokenfile.txt"
         - "--allow-privileged=true"
-        - "--service-cluster-ip-range=10.0.20.0/24"
+        - "--service-cluster-ip-range=10.0.0.1/24"
+        - "--admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,SecurityContextDeny,ResourceQuota"
         - "--insecure-bind-address=0.0.0.0"
         - "--insecure-port=8080"
         - "--secure-port=6443"

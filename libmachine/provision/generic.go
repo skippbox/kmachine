@@ -132,9 +132,16 @@ users:
     {
       "name": "controller-manager",
       "image": "gcr.io/google_containers/hyperkube:v1.1.2",
+      "volumeMounts": [ 
+          {"name": "certs",
+          "mountPath": "{{.CertDir}}",
+          "readOnly": true }
+          ],
       "args": [
               "/hyperkube",
               "controller-manager",
+              "--service-account-private-key-file={{.CertDir}}/apiserver/key.pem",
+              "--root-ca-file=/var/run/kubernetes/ca.pem",
               "--master=http://127.0.0.1:8080",
               "--v=2"
         ]
@@ -156,7 +163,8 @@ users:
               "--token-auth-file={{.CertDir}}/tokenfile.txt",
               "--client-ca-file=/var/run/kubernetes/ca.pem",
               "--allow-privileged=true",
-              "--service-cluster-ip-range=10.0.20.0/24",
+              "--service-cluster-ip-range=10.0.0.1/24",
+              "--admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,SecurityContextDeny,ResourceQuota",
               "--insecure-bind-address=0.0.0.0",
               "--insecure-port=8080",
               "--secure-port=6443",

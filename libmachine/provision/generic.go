@@ -131,7 +131,7 @@ users:
     },
     {
       "name": "controller-manager",
-      "image": "gcr.io/google_containers/hyperkube:v1.1.2",
+      "image": "gcr.io/google_containers/hyperkube:v1.1.4",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -148,7 +148,7 @@ users:
     },
     {
       "name": "apiserver",
-      "image": "gcr.io/google_containers/hyperkube:v1.1.2",
+      "image": "gcr.io/google_containers/hyperkube:v1.1.4",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -176,7 +176,7 @@ users:
     },
     {
       "name": "proxy",
-      "image": "gcr.io/google_containers/hyperkube:v1.1.2",
+      "image": "gcr.io/google_containers/hyperkube:v1.1.4",
       "securityContext": {
         "privileged": true
         },
@@ -189,7 +189,7 @@ users:
     },
     {
       "name": "scheduler",
-      "image": "gcr.io/google_containers/hyperkube:v1.1.2",
+      "image": "gcr.io/google_containers/hyperkube:v1.1.4",
       "args": [
               "/hyperkube",
               "scheduler",

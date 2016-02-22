@@ -69,7 +69,7 @@ func GenerateCertificates(p Provisioner, k8sOptions kubernetes.KubernetesOptions
   }
 
   err = cert.GenerateCert(
-    []string{ip, "localhost"},
+    []string{ip, "10.0.0.1", "localhost"},
     k8sOptions.K8SAPICert,
     k8sOptions.K8SAPIKey,
     authOptions.CaCertPath,

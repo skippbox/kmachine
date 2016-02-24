@@ -22,7 +22,7 @@ It works like this:
 Digital Ocean
 -------------
 
-You will need an account on [Digital Ocean](https://digitalocean.com) and a TOKEN configured:
+You will need an account on [Digital Ocean](https://www.digitalocean.com/) and a TOKEN configured:
 
 ```console
 $ export DIGITALOCEAN_ACCESS_TOKEN=<your token>
@@ -243,5 +243,5 @@ $ PATH=$PWD:$PATH ./kmachine create -d digitalocean foobar
 Support
 -------
 
-If you experience problems with `kmachine` or want to suggest improvements please file an [issue](https://github.com/skippbox/machine/issues).
+If you experience problems with `kmachine` or want to suggest improvements please file an [issue](https://github.com/skippbox/kmachine/issues).
 

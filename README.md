@@ -1,7 +1,7 @@
 Kubernetes Machine (`kmachine`)
 ===============================
 
-[![Build Status](https://travis-ci.org/skippbox/kmachine.svg?branch=master)](https://travis-ci.org/skippbox/kmachine)
+[![Build Status](https://travis-ci.org/skippbox/kmachine.svg?branch=kmachine)](https://travis-ci.org/skippbox/kmachine)
 
 `kmachine` lets you create Docker hosts on your computer, on cloud providers, and
 inside your own data center. It creates servers, installs Docker on them, then

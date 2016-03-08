@@ -28,7 +28,7 @@ Download kubectl
 ----------------
 Move to your kmachine folder and add kubectl:
 ```console
-$ VERSION="v1.1.8"
+$ VERSION="1.1.8"
 $ curl -L -O https://storage.googleapis.com/kubernetes-release/release/v${VERSION}/bin/windows/amd64/kubectl.exe
 ```
 

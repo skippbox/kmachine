@@ -242,8 +242,8 @@ users:
 	return &k8sOptions{
 		k8sOptions:     k8sCfg.String(),
 		k8sOptionsPath: provisioner.KubernetesManifestFile,
-    k8sKubeletCfg:  k8sKubeletCfg.String(),
     k8sKubeletPath: provisioner.KubernetesKubeletPath,
+    k8sKubeletCfg:  k8sKubeletCfg.String(),
     k8sPolicyCfg:   k8sPolicyCfg,
 	}, nil
 }

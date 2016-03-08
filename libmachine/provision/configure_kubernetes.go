@@ -12,6 +12,7 @@ import (
   "github.com/docker/machine/libmachine/cert"
   "github.com/docker/machine/libmachine/kubernetes"
   "github.com/docker/machine/libmachine/log"
+  "github.com/docker/machine/libmachine/provision/serviceaction"
 )
 
 func xferCert(p Provisioner, certPath string, targetPath string) error {
@@ -169,10 +170,16 @@ func GenerateCertificates(p Provisioner, k8sOptions kubernetes.KubernetesOptions
 }
 
 func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions, authOptions auth.AuthOptions) (error) {
-    log.Info("Configuring kubernetes...")
+  log.Info("Configuring kubernetes...")
 
-  if _, err := p.SSHCommand("sudo /bin/sh /usr/local/etc/init.d/kubelet stop"); err != nil {
-      log.Info("Errored while attempting to stop the kubelet: %s", err)
+  sysdresult, err := CheckSystemD(p); if err != nil {
+    return err
+  }
+
+  if (!sysdresult) {
+    if _, err := p.SSHCommand("sudo /bin/sh /etc/init.d/kubelet stop"); err != nil {
+        log.Info("Error while attempting to stop the kubelet: %s", err)
+    }
   }
 
   if err := GenerateCertificates(p, *k8sOptions, authOptions); err != nil {
@@ -192,6 +199,10 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 
   kubeletConfig, err := GenerateKubeletConfig(machine, targetDir)
   if err != nil {
+      return err
+  }
+
+  if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p /etc/kubernetes/policies")); err != nil {
       return err
   }
 
@@ -220,11 +231,11 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
   }  
 
 	/* Lastly, start the kubelet */
-    if _, err := p.SSHCommand("sudo /bin/sh /usr/local/etc/init.d/kubelet start"); err != nil {
-        return err
-    }
+  if err := p.Service("kubelet", serviceaction.Start); err != nil {
+    return err
+  }
 
-    return nil
+  return nil
 }
 
 func GeneratePolicyFile(name string) (string, error) {

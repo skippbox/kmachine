@@ -18,6 +18,7 @@ Download
 
 Get it from the [release page](https://github.com/skippbox/kmachine/releases)
 
+For windows users, you need just an other step. Look at [this doc](docs/kmachine-for-windows-users.md) please.
 
 It works like this:
 

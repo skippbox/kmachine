@@ -223,35 +223,110 @@ func ConfigureAuth(p Provisioner) error {
 }
 
 func installk8sGeneric(p Provisioner) error {
-	// install Kubernetes in a single node using Docker containers
-	//if output, err := p.SSHCommand("docker pull kubernetes/etcd"); err != nil {
-	//	return fmt.Errorf("error installing k8s: %s\n", output)
-	//}
 	k8scfg, err := p.Generatek8sOptions()
 	if err != nil {
 			return err
+	}
+
+	if _, err = p.SSHCommand("sudo mkdir /etc/kubernetes"); err != nil {
+		return err
 	}
 
 	if _, err = p.SSHCommand(fmt.Sprintf("printf '%s' | sudo tee %s", k8scfg.k8sOptions, k8scfg.k8sOptionsPath)); err != nil {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sKubeletCfg, "/tmp/kube.conf")); err != nil {
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sKubeletCfg, "/etc/kubernetes/kubelet.kubeconfig")); err != nil {
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s'| sudo tee %s", k8scfg.k8sPolicyCfg, "/tmp/policy.jsonl")); err != nil {
+	log.Debug("Installing kubelet...")
+	if _,err := p.SSHCommand(fmt.Sprintf("sudo curl -fL -o %s %s && sudo chmod +x %s",
+		k8scfg.k8sKubeletPath,
+		"https://storage.googleapis.com/kubernetes-release/release/v1.2.0-alpha.8/bin/linux/amd64/kubelet",
+		k8scfg.k8sKubeletPath)); err != nil {
 		return err
 	}
 
-	if err := GenerateCertificates(p, p.GetKubernetesOptions(), p.GetAuthOptions()); err != nil {
+	results, err := CheckSystemD(p); if err != nil {
 		return err
 	}
 
+	if results {
+		/* insert systemd service */
+		results := `[Unit]
+Description=Kubernetes Kubelet
+Documentation=https://github.com/kubernetes/kubernetes
 
-	log.Debug("launching master")
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo docker run -d --net=host --pid=host --privileged --restart=always --name head -v /sys:/sys:ro -v /var/run:/var/run:rw -v /:/rootfs:ro -v /dev:/dev -v /var/lib/docker/:/var/lib/docker:rw -v /var/lib/kubelet/:/var/lib/kubelet:rw -v /tmp/kube.conf:/etc/kubernetes/kubelet.kubeconfig -v /tmp/master.json:/etc/kubernetes/manifests/master.json -v /var/run/kubernetes/tokenfile.txt:/tmp/tokenfile.txt -v /tmp/policy.jsonl:/etc/kubernetes/policies/policy.jsonl gcr.io/google_containers/hyperkube-amd64:v1.2.0-alpha.8 /hyperkube kubelet --cluster-dns=10.0.0.10 --cluster-domain=cluster.local --containerized --allow-privileged=true --api_servers=http://localhost:8080 --v=2 --address=0.0.0.0 --enable_server --hostname_override=127.0.0.1 --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig")); err != nil {
-		return fmt.Errorf("error installing master")
+[Service]
+ExecStart=/usr/local/bin/kubelet \
+--api-servers=http://127.0.0.1:8080 \
+--allow-privileged=true \
+--config=/usr/local/etc/kubernetes/manifests \
+--v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target`
+		if _,err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /lib/systemd/system/kubelet.service\n", results)); err != nil {
+			return err
+		}
+
+		if err := p.Service("kubelet", serviceaction.Enable); err != nil {
+			return err
+		}
+	} else {
+		/* insert sysV service */
+		results := `#!/bin/sh
+
+run_start() {
+	echo "Starting kubelet..."
+		/usr/local/bin/kubelet --api-servers=http://127.0.0.1:8080 --cluster-dns=10.0.0.10 --cluster-domain=cluster.local --allow-privileged=true --config=/etc/kubernetes/manifests --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --v=2 > /var/log/kubelet.log 2>&1 &
+}
+
+run_stop() {
+	echo "Stopping kubelet..."
+	P="x$(pidof kubelet)"
+
+	if [ $P != "x" ]; then
+		kill -9 $(pidof kubelet)
+		for i in ` + "`docker ps|grep k8s|awk '{print $1}'`" + `; do
+          docker kill -s 9 $i
+        done
+	fi
+}
+
+run_restart() {
+	if pidof kubelet > /dev/null; then
+		run_stop && run_start
+	else
+		run_start
+	fi
+}
+
+
+case $1 in
+	start) run_start;;
+	stop) run_stop;;
+	restart) run_restart;;
+	*) echo "Usage $0 {start|stop|restart}"; exit 1
+esac`
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /etc/init.d/kubelet && sudo chmod +x /etc/init.d/kubelet\n", results)); err != nil {
+			return err
+		}
+	}
+
+	if _, err := p.SSHCommand("sudo mkdir -p /usr/local/etc/init.d && sudo ln -s /etc/init.d/kubelet /usr/local/etc/init.d/kubelet"); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand("sudo ln -s /etc/init.d/kubelet /etc/rc3.d/S04kubelet"); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand("sudo ln -s /etc/init.d/kubelet /etc/rc6.d/K01kubelet"); err != nil {
+		return err
 	}
 
 	return nil
@@ -296,4 +371,18 @@ func waitForDocker(p Provisioner, dockerPort int) error {
 	}
 
 	return nil
+}
+
+func CheckSystemD(p Provisioner) (bool, error) {
+
+	results, err := p.SSHCommand("readlink /sbin/init"); if err != nil {
+		/* If we error out then /sbin/init more than likely points to init */
+		return false, nil
+	}
+
+	if strings.HasSuffix(results, "systemd") {
+		return true, nil
+	}
+
+	return false, nil
 }

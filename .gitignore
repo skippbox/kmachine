@@ -3,5 +3,5 @@ kmachine_*
 *.log
 *.iml
 .idea/
-./bin
+bin/
 cover

@@ -26,6 +26,7 @@ func NewUbuntuProvisioner(d drivers.Driver) Provisioner {
 			DockerOptionsDir:  "/etc/docker",
 			DaemonOptionsFile: "/etc/default/docker",
 			KubernetesManifestFile: "/tmp/master.json",
+			KubernetesKubeletPath: "/usr/local/bin/kubelet",
 			OsReleaseId:       "ubuntu",
 			Packages: []string{
 				"curl",
@@ -159,6 +160,10 @@ func (provisioner *UbuntuProvisioner) Provision(k8sOptions kubernetes.Kubernetes
 	}
 
 	if err := installk8sGeneric(provisioner); err != nil {
+		return err
+	}
+
+	if err := configureKubernetes(provisioner, &provisioner.KubernetesOptions, authOptions); err != nil {
 		return err
 	}
 

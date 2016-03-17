@@ -1,6 +1,7 @@
 package provision
 
 import (
+	"crypto/rand"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -9,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"crypto/rand"
 	"time"
 
 	"github.com/docker/machine/libmachine/auth"
@@ -26,11 +26,11 @@ type DockerOptions struct {
 }
 
 type k8sOptions struct {
-	k8sOptions        string
-	k8sOptionsPath    string
-	k8sKubeletCfg     string
-	k8sKubeletPath    string
-	k8sPolicyCfg      string
+	k8sOptions     string
+	k8sOptionsPath string
+	k8sKubeletCfg  string
+	k8sKubeletPath string
+	k8sPolicyCfg   string
 }
 
 func randToken() string {
@@ -46,17 +46,17 @@ func upgradeSystem(p Provisioner) error {
 		return fmt.Errorf("error upgrading aufs image: %s\n", output)
 	}
 
-	fmt.Printf("Rebooting system...\n");
+	fmt.Printf("Rebooting system...\n")
 	if output, err := p.SSHCommand(fmt.Sprintf("sudo reboot")); err != nil {
 		return fmt.Errorf("error rebooting aufs image: %s\n", output)
 	}
 
 	drivers.WaitForSSH(p.GetDriver())
-	
+
 	if output, err := p.SSHCommand(fmt.Sprintf("sudo apt-get update")); err != nil {
 		return fmt.Errorf("error refreshing packages: %s\n", output)
 	}
-	
+
 	return nil
 }
 
@@ -225,7 +225,7 @@ func ConfigureAuth(p Provisioner) error {
 func installk8sGeneric(p Provisioner) error {
 	k8scfg, err := p.Generatek8sOptions()
 	if err != nil {
-			return err
+		return err
 	}
 
 	if _, err = p.SSHCommand("sudo mkdir /etc/kubernetes"); err != nil {
@@ -241,14 +241,15 @@ func installk8sGeneric(p Provisioner) error {
 	}
 
 	log.Debug("Installing kubelet...")
-	if _,err := p.SSHCommand(fmt.Sprintf("sudo curl -fL -o %s %s && sudo chmod +x %s",
+	if _, err := p.SSHCommand(fmt.Sprintf("sudo curl -fL -o %s %s && sudo chmod +x %s",
 		k8scfg.k8sKubeletPath,
-		"https://storage.googleapis.com/kubernetes-release/release/v1.2.0-alpha.8/bin/linux/amd64/kubelet",
+		"https://storage.googleapis.com/kubernetes-release/release/v1.2.0/bin/linux/amd64/kubelet",
 		k8scfg.k8sKubeletPath)); err != nil {
 		return err
 	}
 
-	results, err := CheckSystemD(p); if err != nil {
+	results, err := CheckSystemD(p)
+	if err != nil {
 		return err
 	}
 
@@ -269,7 +270,7 @@ RestartSec=5
 
 [Install]
 WantedBy=multi-user.target`
-		if _,err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /lib/systemd/system/kubelet.service\n", results)); err != nil {
+		if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /lib/systemd/system/kubelet.service\n", results)); err != nil {
 			return err
 		}
 
@@ -312,7 +313,7 @@ case $1 in
 	restart) run_restart;;
 	*) echo "Usage $0 {start|stop|restart}"; exit 1
 esac`
-	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /etc/init.d/kubelet && sudo chmod +x /etc/init.d/kubelet\n", results)); err != nil {
+		if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee /etc/init.d/kubelet && sudo chmod +x /etc/init.d/kubelet\n", results)); err != nil {
 			return err
 		}
 	}
@@ -375,7 +376,8 @@ func waitForDocker(p Provisioner, dockerPort int) error {
 
 func CheckSystemD(p Provisioner) (bool, error) {
 
-	results, err := p.SSHCommand("readlink /sbin/init"); if err != nil {
+	results, err := p.SSHCommand("readlink /sbin/init")
+	if err != nil {
 		/* If we error out then /sbin/init more than likely points to init */
 		return false, nil
 	}

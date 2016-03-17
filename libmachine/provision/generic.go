@@ -8,23 +8,23 @@ import (
 	"github.com/docker/machine/libmachine/auth"
 	"github.com/docker/machine/libmachine/drivers"
 	"github.com/docker/machine/libmachine/engine"
+	"github.com/docker/machine/libmachine/kubernetes"
 	"github.com/docker/machine/libmachine/swarm"
-  "github.com/docker/machine/libmachine/kubernetes"
 )
 
 type GenericProvisioner struct {
-	OsReleaseId       string
-	DockerOptionsDir  string
-	DaemonOptionsFile string
+	OsReleaseId            string
+	DockerOptionsDir       string
+	DaemonOptionsFile      string
 	KubernetesManifestFile string
-  KubernetesKubeletPath string
-	Packages          []string
-	OsReleaseInfo     *OsRelease
-	Driver            drivers.Driver
-	AuthOptions       auth.AuthOptions
-	EngineOptions     engine.EngineOptions
-	SwarmOptions      swarm.SwarmOptions
-  KubernetesOptions kubernetes.KubernetesOptions
+	KubernetesKubeletPath  string
+	Packages               []string
+	OsReleaseInfo          *OsRelease
+	Driver                 drivers.Driver
+	AuthOptions            auth.AuthOptions
+	EngineOptions          engine.EngineOptions
+	SwarmOptions           swarm.SwarmOptions
+	KubernetesOptions      kubernetes.KubernetesOptions
 }
 
 func (provisioner *GenericProvisioner) Hostname() (string, error) {
@@ -73,26 +73,26 @@ func (provisioner *GenericProvisioner) SetOsReleaseInfo(info *OsRelease) {
 }
 
 func (provisioner *GenericProvisioner) GetKubernetesOptions() kubernetes.KubernetesOptions {
-    return provisioner.KubernetesOptions
+	return provisioner.KubernetesOptions
 }
 
 func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error) {
-    type ConfigDetails struct {
-        ClusterName string
-        CertDir string
-    }
+	type ConfigDetails struct {
+		ClusterName string
+		CertDir     string
+	}
 
 	var (
-		k8sCfg bytes.Buffer
-        k8sKubeletCfg bytes.Buffer
+		k8sCfg        bytes.Buffer
+		k8sKubeletCfg bytes.Buffer
 	)
 
-    configParams := ConfigDetails{
-        provisioner.Driver.GetMachineName(),
-        provisioner.KubernetesOptions.K8SCertPath,
-    }
+	configParams := ConfigDetails{
+		provisioner.Driver.GetMachineName(),
+		provisioner.KubernetesOptions.K8SCertPath,
+	}
 
-    k8sKubeletConfigTmpl := `apiVersion: v1
+	k8sKubeletConfigTmpl := `apiVersion: v1
 kind: Config
 clusters:
   - cluster:
@@ -131,7 +131,7 @@ users:
     },
     {
       "name": "controller-manager",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0-alpha.8",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -148,7 +148,7 @@ users:
     },
     {
       "name": "apiserver",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0-alpha.8",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -176,7 +176,7 @@ users:
     },
     {
       "name": "proxy",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0-alpha.8",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
       "securityContext": {
         "privileged": true
         },
@@ -189,7 +189,7 @@ users:
     },
     {
       "name": "scheduler",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0-alpha.8",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
       "args": [
               "/hyperkube",
               "scheduler",
@@ -217,34 +217,34 @@ users:
 		return nil, err
 	}
 
-  kt, err := template.New("k8sKubeletConfig").Parse(k8sKubeletConfigTmpl)
-  if err != nil {
-      return nil, err
-  }
+	kt, err := template.New("k8sKubeletConfig").Parse(k8sKubeletConfigTmpl)
+	if err != nil {
+		return nil, err
+	}
 
-  k8sPolicyCfg, err := GeneratePolicyFile(provisioner.KubernetesOptions.K8SUser)
-  if err != nil {
-    return nil, err
-  }
+	k8sPolicyCfg, err := GeneratePolicyFile(provisioner.KubernetesOptions.K8SUser)
+	if err != nil {
+		return nil, err
+	}
 
 	/*
-	k8sContext := EngineConfigContext{
-		DockerPort:    1234,
-		AuthOptions:   provisioner.AuthOptions,
-		EngineOptions: provisioner.EngineOptions,
-	}
+		k8sContext := EngineConfigContext{
+			DockerPort:    1234,
+			AuthOptions:   provisioner.AuthOptions,
+			EngineOptions: provisioner.EngineOptions,
+		}
 	*/
 
 	//t.Execute(&k8sCfg, k8sContext)
-    t.Execute(&k8sCfg, configParams)
-    kt.Execute(&k8sKubeletCfg, configParams)
+	t.Execute(&k8sCfg, configParams)
+	kt.Execute(&k8sKubeletCfg, configParams)
 
 	return &k8sOptions{
 		k8sOptions:     k8sCfg.String(),
 		k8sOptionsPath: provisioner.KubernetesManifestFile,
-    k8sKubeletPath: provisioner.KubernetesKubeletPath,
-    k8sKubeletCfg:  k8sKubeletCfg.String(),
-    k8sPolicyCfg:   k8sPolicyCfg,
+		k8sKubeletPath: provisioner.KubernetesKubeletPath,
+		k8sKubeletCfg:  k8sKubeletCfg.String(),
+		k8sPolicyCfg:   k8sPolicyCfg,
 	}, nil
 }
 

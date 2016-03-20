@@ -240,6 +240,11 @@ func installk8sGeneric(p Provisioner) error {
 		return err
 	}
 
+	log.Debug("Installing kubelet dependencies...")
+	if _, err := p.SSHCommand("sudo apt-get install socat"); err != nil {
+		return err
+	}
+
 	log.Debug("Installing kubelet...")
 	if _, err := p.SSHCommand(fmt.Sprintf("sudo curl -fL -o %s %s && sudo chmod +x %s",
 		k8scfg.k8sKubeletPath,

@@ -193,7 +193,7 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 	targetDir := k8sOptions.K8SCertPath
 
 	/* Generate and copy a new YAML file to the target */
-	configFile, err := Generatek8sManifest(machine, targetDir)
+	configFile, err := Generatek8sManifest(machine, targetDir, k8sOptions.K8SVersion)
 	if err != nil {
 		return err
 	}
@@ -305,13 +305,14 @@ users:
 	return result.String(), err
 }
 
-func Generatek8sManifest(name string, targetDir string) (string, error) {
+func Generatek8sManifest(name string, targetDir string, version string) (string, error) {
 	type ConfigDetails struct {
 		ClusterName string
 		CertDir     string
+                Version     string
 	}
 
-	details := ConfigDetails{name, targetDir}
+	details := ConfigDetails{name, targetDir, version}
 	var result bytes.Buffer
 
 	k8sConfigTmpl := `apiVersion: v1
@@ -340,7 +341,7 @@ spec:
         - "--listen-peer-urls=http://127.0.0.1:2380"
         - "--name=etcd"
     - name: "controller-manager"
-      image: "gcr.io/google_containers/hyperkube-amd64:v1.2.0"
+      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
       volumeMounts:
         - name: "certs"
           mountPath: "{{.CertDir}}"
@@ -353,7 +354,7 @@ spec:
         - "--root-ca-file=/var/run/kubernetes/ca.pem"
         - "--v=2"
     - name: "apiserver"
-      image: "gcr.io/google_containers/hyperkube-amd64:v1.2.0"
+      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
       volumeMounts:
         - name: "certs"
           mountPath: "{{.CertDir}}"
@@ -377,7 +378,7 @@ spec:
         - "--tls-private-key-file={{.CertDir}}/apiserver/key.pem"
         - "--v=2"
     - name: "proxy"
-      image: "gcr.io/google_containers/hyperkube-amd64:v1.2.0"
+      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
       securityContext:
         privileged: true
       args:
@@ -386,7 +387,7 @@ spec:
         - "--master=http://127.0.0.1:8080"
         - "--v=2"
     - name: "scheduler"
-      image: "gcr.io/google_containers/hyperkube-amd64:v1.2.0"
+      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
       args:
         - "/hyperkube"
         - "scheduler"

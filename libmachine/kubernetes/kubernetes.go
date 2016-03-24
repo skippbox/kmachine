@@ -16,6 +16,7 @@ type KubernetesOptions struct {
     K8SProxyKey     string
     K8SAdminCert    string
     K8SAdminKey     string
+    K8SVersion      string
 }
 
 /* Random password generator for the token */

@@ -80,6 +80,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 	type ConfigDetails struct {
 		ClusterName string
 		CertDir     string
+                Version     string
 	}
 
 	var (
@@ -90,6 +91,7 @@ func (provisioner *GenericProvisioner) Generatek8sOptions() (*k8sOptions, error)
 	configParams := ConfigDetails{
 		provisioner.Driver.GetMachineName(),
 		provisioner.KubernetesOptions.K8SCertPath,
+                provisioner.KubernetesOptions.K8SVersion,
 	}
 
 	k8sKubeletConfigTmpl := `apiVersion: v1
@@ -131,7 +133,7 @@ users:
     },
     {
       "name": "controller-manager",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -148,7 +150,7 @@ users:
     },
     {
       "name": "apiserver",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}",
       "volumeMounts": [ 
           {"name": "certs",
           "mountPath": "{{.CertDir}}",
@@ -176,7 +178,7 @@ users:
     },
     {
       "name": "proxy",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}",
       "securityContext": {
         "privileged": true
         },
@@ -189,7 +191,7 @@ users:
     },
     {
       "name": "scheduler",
-      "image": "gcr.io/google_containers/hyperkube-amd64:v1.2.0",
+      "image": "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}",
       "args": [
               "/hyperkube",
               "scheduler",

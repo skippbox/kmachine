@@ -16,6 +16,7 @@ import (
 	"github.com/docker/machine/libmachine/log"
 	"github.com/docker/machine/libmachine/state"
 	"github.com/docker/machine/libmachine/swarm"
+        "github.com/docker/machine/libmachine/kubernetes"
 	"github.com/skarademir/naturalsort"
 )
 
@@ -38,6 +39,7 @@ type HostListItem struct {
 	State        state.State
 	URL          string
 	SwarmOptions *swarm.SwarmOptions
+        K8sOptions   *kubernetes.KubernetesOptions
 }
 
 func cmdLs(c *cli.Context) error {
@@ -67,7 +69,7 @@ func cmdLs(c *cli.Context) error {
 	swarmInfo := make(map[string]string)
 
 	w := tabwriter.NewWriter(os.Stdout, 5, 1, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tACTIVE\tDRIVER\tSTATE\tURL\tSWARM")
+	fmt.Fprintln(w, "NAME\tACTIVE\tDRIVER\tSTATE\tURL\tSWARM\tVERSION")
 
 	for _, host := range hostList {
 		swarmOptions := host.HostOptions.SwarmOptions
@@ -99,7 +101,7 @@ func cmdLs(c *cli.Context) error {
 			}
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			item.Name, activeString, item.DriverName, item.State, item.URL, swarmInfo)
+			item.Name, activeString, item.DriverName, item.State, item.URL, swarmInfo, item.K8sOptions.K8SVersion)
 	}
 
 	w.Flush()
@@ -275,6 +277,7 @@ func attemptGetHostState(h *host.Host, stateQueryChan chan<- HostListItem) {
 		State:        currentState,
 		URL:          url,
 		SwarmOptions: h.HostOptions.SwarmOptions,
+                K8sOptions:   h.HostOptions.KubernetesOptions,
 	}
 }
 

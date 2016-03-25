@@ -34,7 +34,7 @@ Commands:
 Run '{{.Name}} COMMAND --help' for more information on a command.
 `
 
-var CommandHelpTemplate = `Usage: docker-machine {{.Name}}{{if .Flags}} [OPTIONS]{{end}} [arg...]
+var CommandHelpTemplate = `Usage: kmachine {{.Name}}{{if .Flags}} [OPTIONS]{{end}} [arg...]
 
 {{.Usage}}{{if .Description}}
 
@@ -72,8 +72,8 @@ func main() {
 	cli.CommandHelpTemplate = CommandHelpTemplate
 	app := cli.NewApp()
 	app.Name = path.Base(os.Args[0])
-	app.Author = "Docker Machine Contributors"
-	app.Email = "https://github.com/docker/machine"
+	app.Author = "Kmachine Contributors"
+	app.Email = "https://github.com/skippbox/kmachine"
 	app.Before = func(c *cli.Context) error {
 		// TODO: Need better handling of config, everything is too
 		// complected together right now.
@@ -87,10 +87,10 @@ func main() {
 
 	app.Commands = commands.Commands
 	app.CommandNotFound = cmdNotFound
-	app.Usage = "Create and manage machines running Docker."
+	app.Usage = "Create and manage machines running Docker and Kubernetes."
 	app.Version = version.Version + " (" + version.GitCommit + ")"
 
-	log.Debug("Docker Machine Version: ", app.Version)
+	log.Debug("Kmachine Version: ", app.Version)
 
 	app.Flags = []cli.Flag{
 		cli.BoolFlag{

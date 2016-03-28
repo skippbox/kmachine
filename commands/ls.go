@@ -100,7 +100,7 @@ func cmdLs(c *cli.Context) error {
 				swarmInfo = fmt.Sprintf("%s (master)", swarmInfo)
 			}
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			item.Name, activeString, item.DriverName, item.State, item.URL, swarmInfo, item.K8sOptions.K8SVersion)
 	}
 

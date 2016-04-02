@@ -241,7 +241,12 @@ func installk8sGeneric(p Provisioner) error {
 	}
 
 	log.Debug("Installing kubelet dependencies...")
-	if _, err := p.SSHCommand("sudo apt-get install socat"); err != nil {
+	if _, err := p.SSHCommand("sudo apt-get -y install socat"); err != nil {
+		return err
+	}
+
+	log.Debug("Installing nsenter...")
+	if _, err := p.SSHCommand("sudo docker run --rm -v /usr/local/bin:/target jpetazzo/nsenter"); err != nil {
 		return err
 	}
 

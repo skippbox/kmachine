@@ -180,6 +180,22 @@ var Commands = []cli.Command{
 		SkipFlagParsing: true,
 	},
 	{
+		Name:			"deploy",
+		Usage:			"Deploy a specific configuration to the machine",
+		Description:	"Arguments are a machine name and configuration",
+		Action:			fatalOnError(cmdDeploy),
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:	"machine",
+				Usage:	"The target machine of the deployment",
+			},
+			cli.StringFlag{
+				Name:	"path",
+				Usage:	"One of dns|helm|dashboard",
+			},
+		},
+	},
+	{
 		Name:        "env",
 		Usage:       "Display the commands to set up the environment for the Docker client",
 		Description: "Argument is a machine name.",

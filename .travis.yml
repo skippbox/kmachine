@@ -1,0 +1,5 @@
+sudo: required
+dist: trusty
+language: bash
+services: docker
+script: USE_CONTAINER=true make fmt vet test-short test-long coverage-send

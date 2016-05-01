@@ -331,6 +331,9 @@ spec:
     - name: "policies"
       hostPath:
         path: "/etc/kubernetes/policies"
+    - name: "data"
+      hostPath:
+        path: "/var/lib/etcd"
   containers:
     - name: "etcd"
       image: "b.gcr.io/kuar/etcd:2.1.1"
@@ -340,6 +343,9 @@ spec:
         - "--listen-client-urls=http://127.0.0.1:2379"
         - "--listen-peer-urls=http://127.0.0.1:2380"
         - "--name=etcd"
+      volumeMounts:
+        - name: "data"
+          mountPath: "/var/lib/etcd"
     - name: "controller-manager"
       image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
       volumeMounts:

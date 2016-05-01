@@ -129,7 +129,11 @@ users:
               "--listen-client-urls=http://127.0.0.1:2379",
               "--listen-peer-urls=http://127.0.0.1:2380",
               "--name=etcd"
-        ]
+        ],
+      "volumeMounts": [
+          {"name": "data",
+          "mountPath": "/var/lib/etcd"
+          ]
     },
     {
       "name": "controller-manager",
@@ -208,6 +212,10 @@ users:
     }, { "name": "policies",
         "hostPath": {
             "path": "/etc/kubernetes/policies"
+        }
+    }, { "name": "data",
+        "hostPath": {
+            "path": "/var/lib/etcd"
         }
     }
   ]

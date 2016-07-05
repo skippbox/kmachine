@@ -196,7 +196,7 @@ func cmdCreateInner(c *cli.Context) error {
 
         k8sVersion := c.String("k8s-version")
         if k8sVersion == "" {
-                k8sVersion = "1.2.0"
+                k8sVersion = "1.3.0"
         }
 
 	machineDir := filepath.Join(mcndirs.GetMachineDir(), name)

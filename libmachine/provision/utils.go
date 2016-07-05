@@ -253,7 +253,7 @@ func installk8sGeneric(p Provisioner) error {
 	log.Debug("Installing kubelet...")
 	if _, err := p.SSHCommand(fmt.Sprintf("sudo curl -fL -o %s %s && sudo chmod +x %s",
 		k8scfg.k8sKubeletPath,
-		"https://storage.googleapis.com/kubernetes-release/release/v1.2.0/bin/linux/amd64/kubelet",
+		"https://storage.googleapis.com/kubernetes-release/release/v1.3.0/bin/linux/amd64/kubelet",
 		k8scfg.k8sKubeletPath)); err != nil {
 		return err
 	}

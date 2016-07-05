@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/docker/machine/cli"
-	"github.com/kubernetes/helm/pkg/kubectl"
+	"k8s.io/helm/pkg/kube"
 )
 
 func generateK8sURL(url string) string {
@@ -32,8 +32,10 @@ func cmdDeploy(c *cli.Context) error {
 
 	/* type for now can be one of: dns|helm|dashboard */
 	var txt string
+	var ns string
 	switch t {
 	case "dns":
+		ns = `kube-system`
 		txt = `
 ######################################################################
 # Copyright 2015 The Kubernetes Authors All rights reserved.
@@ -206,6 +208,7 @@ spec:
         emptyDir: {}
       dnsPolicy: Default  # Don't use cluster DNS.`
 	case "helm":
+		ns = `helm`
 		txt = `
 ######################################################################
 # Copyright 2015 The Kubernetes Authors All rights reserved.
@@ -272,6 +275,7 @@ spec:
           initialDelaySeconds: 1
           timeoutSeconds: 1`
 	case "dashboard":
+		ns = `kube-system`
 		txt = `
 ######################################################################
 # Copyright 2015 The Kubernetes Authors All rights reserved.
@@ -354,7 +358,11 @@ spec:
 		return fmt.Errorf("Invalid file: %s", t)
 	}
 
-	buf := bytes.NewBufferString(txt)
+	kc := kube.New(nil)
+	
+	var b bytes.NewBufferString(txt)
+
+	fmt.Println(b.String())
 
 	url, err := host.Driver.GetURL()
 	if err != nil {
@@ -362,9 +370,8 @@ spec:
 	}
 
 	fmt.Println("using host: " + generateK8sURL(url))
-	runner := &kubectl.RealRunner{}
 
-	runner.Create(buf.Bytes())
+	kc.Create(ns,&b)
 
 	return nil
 }

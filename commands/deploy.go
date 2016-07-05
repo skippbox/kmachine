@@ -225,140 +225,52 @@ kind: Namespace
 metadata:
   labels:
     app: helm
-    name: helm-namespace
+    name: helm
   name: helm
 ---
 apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: helm
-    name: expandybird-service
-  name: expandybird-service
-  namespace: helm
-spec:
-  ports:
-  - name: expandybird
-    port: 8081
-    targetPort: 8080
-  selector:
-    app: helm
-    name: expandybird
----
-apiVersion: v1
 kind: ReplicationController
 metadata:
   labels:
     app: helm
-    name: expandybird-rc
-  name: expandybird-rc
-  namespace: helm
-spec:
-  replicas: 2
-  selector:
-    app: helm
-    name: expandybird
-  template:
-    metadata:
-      labels:
-        app: helm
-        name: expandybird
-    spec:
-      containers:
-      - env: []
-        image: gcr.io/dm-k8s-prod/expandybird:v1.2.1
-        name: expandybird
-        ports:
-        - containerPort: 8080
-          name: expandybird
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: helm
-    name: resourcifier-service
-  name: resourcifier-service
-  namespace: helm
-spec:
-  ports:
-  - name: resourcifier
-    port: 8082
-    targetPort: 8080
-  selector:
-    app: helm
-    name: resourcifier
----
-apiVersion: v1
-kind: ReplicationController
-metadata:
-  labels:
-    app: helm
-    name: resourcifier-rc
-  name: resourcifier-rc
-  namespace: helm
-spec:
-  replicas: 2
-  selector:
-    app: helm
-    name: resourcifier
-  template:
-    metadata:
-      labels:
-        app: helm
-        name: resourcifier
-    spec:
-      containers:
-      - env: []
-        image: gcr.io/dm-k8s-prod/resourcifier:v1.2.1
-        name: resourcifier
-        ports:
-        - containerPort: 8080
-          name: resourcifier
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: helm
-    name: manager-service
-  name: manager-service
-  namespace: helm
-spec:
-  ports:
-  - name: manager
-    port: 8080
-    targetPort: 8080
-  selector:
-    app: helm
-    name: manager
----
-apiVersion: v1
-kind: ReplicationController
-metadata:
-  labels:
-    app: helm
-    name: manager-rc
-  name: manager-rc
+    name: tiller
+  name: tiller-rc
   namespace: helm
 spec:
   replicas: 1
   selector:
     app: helm
-    name: manager
+    name: tiller
   template:
     metadata:
       labels:
         app: helm
-        name: manager
+        name: tiller
     spec:
       containers:
-      - env: []
-        image: gcr.io/dm-k8s-prod/manager:v1.2.1
-        name: manager
+      - env:
+          - name: DEFAULT_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        image: gcr.io/kubernetes-helm/tiller:canary
+        name: tiller
         ports:
-        - containerPort: 8080
-          name: manager`
+        - containerPort: 44134
+          name: tiller
+        imagePullPolicy: Always
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 44135
+          initialDelaySeconds: 1
+          timeoutSeconds: 1
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 44135
+          initialDelaySeconds: 1
+          timeoutSeconds: 1`
 	case "dashboard":
 		txt = `
 ######################################################################

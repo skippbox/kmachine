@@ -359,8 +359,7 @@ spec:
 	}
 
 	kc := kube.New(nil)
-	
-	var b bytes.NewBufferString(txt)
+	b  := bytes.NewBufferString(txt)
 
 	fmt.Println(b.String())
 
@@ -371,7 +370,7 @@ spec:
 
 	fmt.Println("using host: " + generateK8sURL(url))
 
-	kc.Create(ns,&b)
+	kc.Create(ns,b)
 
 	return nil
 }

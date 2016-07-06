@@ -1,0 +1,44 @@
+machine:
+  pre:
+    - curl -sSL https://s3.amazonaws.com/circle-downloads/install-circleci-docker.sh | bash -s -- 1.10.0
+
+  environment:
+    GOVERSION: "1.6.2"
+    GOPATH:  "${HOME}/.go_workspace"
+    WORKDIR: "${GOPATH}/src/k8s.io/helm"
+
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - sudo rm -rf /usr/local/go
+    - rm -rf "$GOPATH"
+
+  override:
+    # install go
+    - wget "https://storage.googleapis.com/golang/go${GOVERSION}.linux-amd64.tar.gz"
+    - sudo tar -C /usr/local -xzf "go${GOVERSION}.linux-amd64.tar.gz"
+
+    # move repository to the canonical import path
+    - mkdir -p "$(dirname ${WORKDIR})"
+    - cp -R "${HOME}/helm" "${WORKDIR}"
+
+    # install dependencies
+    - cd "${WORKDIR}" && make bootstrap
+
+  post:
+    - go env
+
+test:
+  override:
+    - cd "${WORKDIR}" && ./scripts/ci.sh:
+        parallel: true
+
+deployment:
+  gcr:
+    branch: master
+    commands:
+      - echo $GCLOUD_SERVICE_KEY | base64 --decode > ${HOME}/gcloud-service-key.json
+      - docker login -e 1234@5678.com -u _json_key -p "$(cat ${HOME}/gcloud-service-key.json)" https://gcr.io
+      - docker push gcr.io/kubernetes-helm/tiller:canary

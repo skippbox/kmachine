@@ -1,0 +1,353 @@
+/*
+Copyright 2016 The Kubernetes Authors All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package main
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"log"
+	"path"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/technosophos/moniker"
+	ctx "golang.org/x/net/context"
+
+	"k8s.io/helm/cmd/tiller/environment"
+	"k8s.io/helm/pkg/chartutil"
+	"k8s.io/helm/pkg/proto/hapi/chart"
+	"k8s.io/helm/pkg/proto/hapi/release"
+	"k8s.io/helm/pkg/proto/hapi/services"
+	"k8s.io/helm/pkg/storage"
+	"k8s.io/helm/pkg/timeconv"
+)
+
+var srv *releaseServer
+
+func init() {
+	srv = &releaseServer{
+		env: env,
+	}
+	srv.env.Namespace = namespace
+	services.RegisterReleaseServiceServer(rootServer, srv)
+}
+
+var (
+	// errNotImplemented is a temporary error for uninmplemented callbacks.
+	errNotImplemented = errors.New("not implemented")
+	// errMissingChart indicates that a chart was not provided.
+	errMissingChart = errors.New("no chart provided")
+	// errMissingRelease indicates that a release (name) was not provided.
+	errMissingRelease = errors.New("no release provided")
+)
+
+// ListDefaultLimit is the default limit for number of items returned in a list.
+var ListDefaultLimit int64 = 512
+
+type releaseServer struct {
+	env *environment.Environment
+}
+
+func (s *releaseServer) ListReleases(req *services.ListReleasesRequest, stream services.ReleaseService_ListReleasesServer) error {
+	rels, err := s.env.Releases.List()
+	if err != nil {
+		return err
+	}
+
+	if len(req.Filter) != 0 {
+		rels, err = filterReleases(req.Filter, rels)
+		if err != nil {
+			return err
+		}
+	}
+
+	total := int64(len(rels))
+
+	switch req.SortBy {
+	case services.ListSort_NAME:
+		sort.Sort(byName(rels))
+	case services.ListSort_LAST_RELEASED:
+		sort.Sort(byDate(rels))
+	}
+
+	if req.SortOrder == services.ListSort_DESC {
+		ll := len(rels)
+		rr := make([]*release.Release, ll)
+		for i, item := range rels {
+			rr[ll-i-1] = item
+		}
+		rels = rr
+	}
+
+	l := int64(len(rels))
+	if req.Offset != "" {
+
+		i := -1
+		for ii, cur := range rels {
+			if cur.Name == req.Offset {
+				i = ii
+			}
+		}
+		if i == -1 {
+			return fmt.Errorf("offset %q not found", req.Offset)
+		}
+
+		if len(rels) < i {
+			return fmt.Errorf("no items after %q", req.Offset)
+		}
+
+		rels = rels[i:]
+		l = int64(len(rels))
+	}
+
+	if req.Limit == 0 {
+		req.Limit = ListDefaultLimit
+	}
+
+	next := ""
+	if l > req.Limit {
+		next = rels[req.Limit].Name
+		rels = rels[0:req.Limit]
+		l = int64(len(rels))
+	}
+
+	res := &services.ListReleasesResponse{
+		Next:     next,
+		Count:    l,
+		Total:    total,
+		Releases: rels,
+	}
+	stream.Send(res)
+	return nil
+}
+
+func filterReleases(filter string, rels []*release.Release) ([]*release.Release, error) {
+	preg, err := regexp.Compile(filter)
+	if err != nil {
+		return rels, err
+	}
+	matches := []*release.Release{}
+	for _, r := range rels {
+		if preg.MatchString(r.Name) {
+			matches = append(matches, r)
+		}
+	}
+	return matches, nil
+}
+
+func (s *releaseServer) GetReleaseStatus(c ctx.Context, req *services.GetReleaseStatusRequest) (*services.GetReleaseStatusResponse, error) {
+	if req.Name == "" {
+		return nil, errMissingRelease
+	}
+	rel, err := s.env.Releases.Read(req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if rel.Info == nil {
+		return nil, errors.New("release info is missing")
+	}
+	return &services.GetReleaseStatusResponse{Info: rel.Info}, nil
+}
+
+func (s *releaseServer) GetReleaseContent(c ctx.Context, req *services.GetReleaseContentRequest) (*services.GetReleaseContentResponse, error) {
+	if req.Name == "" {
+		return nil, errMissingRelease
+	}
+	rel, err := s.env.Releases.Read(req.Name)
+	return &services.GetReleaseContentResponse{Release: rel}, err
+}
+
+func (s *releaseServer) UpdateRelease(c ctx.Context, req *services.UpdateReleaseRequest) (*services.UpdateReleaseResponse, error) {
+	return nil, errNotImplemented
+}
+
+func (s *releaseServer) uniqName(start string) (string, error) {
+
+	// If a name is supplied, we check to see if that name is taken. Right now,
+	// we fail if it is already taken. We could instead fall-thru and allow
+	// an automatically generated name, but this seems to violate the principle
+	// of least surprise.
+	if start != "" {
+		if _, err := s.env.Releases.Read(start); err == storage.ErrNotFound {
+			return start, nil
+		}
+		return "", fmt.Errorf("a release named %q already exists", start)
+	}
+
+	maxTries := 5
+	for i := 0; i < maxTries; i++ {
+		namer := moniker.New()
+		name := namer.NameSep("-")
+		if _, err := s.env.Releases.Read(name); err == storage.ErrNotFound {
+			return name, nil
+		}
+		log.Printf("info: Name %q is taken. Searching again.", name)
+	}
+	log.Printf("warning: No available release names found after %d tries", maxTries)
+	return "ERROR", errors.New("no available release name found")
+}
+
+func (s *releaseServer) engine(ch *chart.Chart) environment.Engine {
+	renderer := s.env.EngineYard.Default()
+	if ch.Metadata.Engine != "" {
+		if r, ok := s.env.EngineYard.Get(ch.Metadata.Engine); ok {
+			renderer = r
+		} else {
+			log.Printf("warning: %s requested non-existent template engine %s", ch.Metadata.Name, ch.Metadata.Engine)
+		}
+	}
+	return renderer
+}
+
+func (s *releaseServer) InstallRelease(c ctx.Context, req *services.InstallReleaseRequest) (*services.InstallReleaseResponse, error) {
+	if req.Chart == nil {
+		return nil, errMissingChart
+	}
+
+	name, err := s.uniqName(req.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	ts := timeconv.Now()
+	options := chartutil.ReleaseOptions{Name: name, Time: ts, Namespace: s.env.Namespace}
+	valuesToRender, err := chartutil.ToRenderValues(req.Chart, req.Values, options)
+	if err != nil {
+		return nil, err
+	}
+
+	renderer := s.engine(req.Chart)
+	files, err := renderer.Render(req.Chart, valuesToRender)
+	if err != nil {
+		return nil, err
+	}
+
+	b := bytes.NewBuffer(nil)
+	for name, file := range files {
+		// Ignore templates that starts with underscore to handle them as partials
+		if strings.HasPrefix(path.Base(name), "_") {
+			continue
+		}
+
+		// Ignore empty documents because the Kubernetes library can't handle
+		// them.
+		if len(file) > 0 {
+			b.WriteString("\n---\n# Source: " + name + "\n")
+			b.WriteString(file)
+		}
+	}
+
+	// Store a release.
+	r := &release.Release{
+		Name:   name,
+		Chart:  req.Chart,
+		Config: req.Values,
+		Info: &release.Info{
+			FirstDeployed: ts,
+			LastDeployed:  ts,
+			Status:        &release.Status{Code: release.Status_UNKNOWN},
+		},
+		Manifest: b.String(),
+	}
+
+	res := &services.InstallReleaseResponse{Release: r}
+
+	if req.DryRun {
+		log.Printf("Dry run for %s", name)
+		return res, nil
+	}
+
+	if err := s.env.KubeClient.Create(s.env.Namespace, b); err != nil {
+		r.Info.Status.Code = release.Status_FAILED
+		log.Printf("warning: Release %q failed: %s", name, err)
+		if err := s.env.Releases.Create(r); err != nil {
+			log.Printf("warning: Failed to record release %q: %s", name, err)
+		}
+		return res, fmt.Errorf("release %s failed: %s", name, err)
+	}
+
+	// This is a tricky case. The release has been created, but the result
+	// cannot be recorded. The truest thing to tell the user is that the
+	// release was created. However, the user will not be able to do anything
+	// further with this release.
+	//
+	// One possible strategy would be to do a timed retry to see if we can get
+	// this stored in the future.
+	if err := s.env.Releases.Create(r); err != nil {
+		log.Printf("warning: Failed to record release %q: %s", name, err)
+		return res, nil
+	}
+
+	r.Info.Status.Code = release.Status_DEPLOYED
+	return res, nil
+}
+
+func (s *releaseServer) UninstallRelease(c ctx.Context, req *services.UninstallReleaseRequest) (*services.UninstallReleaseResponse, error) {
+	if req.Name == "" {
+		log.Printf("uninstall: Release not found: %s", req.Name)
+		return nil, errMissingRelease
+	}
+
+	rel, err := s.env.Releases.Read(req.Name)
+	if err != nil {
+		log.Printf("uninstall: Release not loaded: %s", req.Name)
+		return nil, err
+	}
+
+	log.Printf("uninstall: Deleting %s", req.Name)
+	rel.Info.Status.Code = release.Status_DELETED
+	rel.Info.Deleted = timeconv.Now()
+
+	b := bytes.NewBuffer([]byte(rel.Manifest))
+
+	if err := s.env.KubeClient.Delete(s.env.Namespace, b); err != nil {
+		log.Printf("uninstall: Failed deletion of %q: %s", req.Name, err)
+		return nil, err
+	}
+
+	if err := s.env.Releases.Update(rel); err != nil {
+		log.Printf("uninstall: Failed to store updated release: %s", err)
+	}
+
+	res := services.UninstallReleaseResponse{Release: rel}
+	return &res, nil
+}
+
+// byName implements the sort.Interface for []*release.Release.
+type byName []*release.Release
+
+func (r byName) Len() int {
+	return len(r)
+}
+func (r byName) Swap(p, q int) {
+	r[p], r[q] = r[q], r[p]
+}
+func (r byName) Less(i, j int) bool {
+	return r[i].Name < r[j].Name
+}
+
+type byDate []*release.Release
+
+func (r byDate) Len() int { return len(r) }
+func (r byDate) Swap(p, q int) {
+	r[p], r[q] = r[q], r[p]
+}
+func (r byDate) Less(p, q int) bool {
+	return r[p].Info.LastDeployed.Seconds < r[q].Info.LastDeployed.Seconds
+}

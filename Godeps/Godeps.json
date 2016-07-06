@@ -168,8 +168,12 @@
 			"Rev": "2400193c85c3561d13880d34e0e10c4315bb02af"
 		},
 		{
-			"ImportPath": "github.com/kubernetes/helm/pkg/kubectl",
-			"Rev": "4d7c681ba0aa43b45d122faa998c243422019be4"
+			"ImportPath": "k8s.io/helm/pkg/kube",
+			"Rev": "283137936a498aed572ee22af6774b6fb6e9fd94"
+		},
+		{
+			"ImportPath": "github.com/runseb/egoscale",
+			"Rev": "c57a032e2e6b8a7111724a0b3dab603cfac4c6cc"
 		}
 	]
 }

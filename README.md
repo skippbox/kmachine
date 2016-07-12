@@ -214,6 +214,22 @@ a7ceff86eaae        gcr.io/google_containers/hyperkube:v1.0.3   "/hyperkube cont
 c00bfdf7fcfa        gcr.io/google_containers/pause:0.8.0        "/pause"                 18 minutes ago      Up 18 minutes                           k8s_POD.e4cc795_foobar-foobar_default_89de857e00cf225431816ef4afd91195_a4f67919
 ```
 
+Deploy Addons
+-------------
+
+You can deploy the DNS and Dashboard Add-ons with:
+
+```
+$ kmachine deploy dns <machine_name>
+$ kmachine deploy dashboard <machine_name>
+```
+
+In addition you can deploy [Helm](https://github.com/kubernetes/helm)
+
+```
+$ kmachine deploy helm <machine_name>
+```
+
 Documentation
 -------------
 

@@ -192,8 +192,24 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 	machine := driver.GetMachineName()
 	targetDir := k8sOptions.K8SCertPath
 
-	/* Generate and copy a new YAML file to the target */
-	configFile, err := Generatek8sManifest(machine, targetDir, k8sOptions.K8SVersion)
+	/* Generate and copy new YAML files to the target */
+
+	apiserverConfigFile, err := GenerateApiserverManifest(targetDir, k8sOptions.K8SVersion)
+	if err != nil {
+		return err
+	}
+
+	controllerManagerConfigFile, err := GenerateControllerManagerManifest(targetDir, k8sOptions.K8SVersion)
+	if err != nil {
+		return err
+	}
+
+	schedulerConfigFile, err := GenerateSchedulerManifest(k8sOptions.K8SVersion)
+	if err != nil {
+		return err
+	}
+
+	proxyConfigFile, err := GenerateProxyManifest(k8sOptions.K8SVersion)
 	if err != nil {
 		return err
 	}
@@ -214,7 +230,7 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 
 	/* TOOD: The target manifest directory should be a parameter throughout here */
 	/* Ensure that the kubernetes configuration directory exists */
-	if _, err := p.SSHCommand(fmt.Sprintf("sudo mkdir -p /etc/kubernetes/manifests")); err != nil {
+	if _, err := p.SSHCommand("sudo mkdir -p /etc/kubernetes/manifests"); err != nil {
 		return err
 	}
 
@@ -222,7 +238,27 @@ func configureKubernetes(p Provisioner, k8sOptions *kubernetes.KubernetesOptions
 		return err
 	}
 
-	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", configFile, "/etc/kubernetes/manifests/kubernetes.yaml")); err != nil {
+	if _, err := p.SSHCommand("sudo rm -f /etc/kubernetes/manifests/kubernetes.yaml"); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", GetEtcdManifest(), "/etc/kubernetes/manifests/etcd.yaml")); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", apiserverConfigFile, "/etc/kubernetes/manifests/apiserver.yaml")); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", controllerManagerConfigFile, "/etc/kubernetes/manifests/controller-manager.yaml")); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", schedulerConfigFile, "/etc/kubernetes/manifests/scheduler.yaml")); err != nil {
+		return err
+	}
+
+	if _, err := p.SSHCommand(fmt.Sprintf("printf '%%s' '%s' | sudo tee %s", proxyConfigFile, "/etc/kubernetes/manifests/proxy.yaml")); err != nil {
 		return err
 	}
 
@@ -305,108 +341,191 @@ users:
 	return result.String(), err
 }
 
-func Generatek8sManifest(name string, targetDir string, version string) (string, error) {
-	type ConfigDetails struct {
-		ClusterName string
-		CertDir     string
-                Version     string
-	}
-
-	details := ConfigDetails{name, targetDir, version}
-	var result bytes.Buffer
-
-	k8sConfigTmpl := `apiVersion: v1
+// GetEtcdManifest returns a manifest for an etcd pod
+func GetEtcdManifest() string {
+	return `apiVersion: v1
 kind: Pod
-clusters:
-  - cluster:
-      certificate-authority: {{.CertDir}}/ca.pem
 metadata:
-  name: {{.ClusterName}}
+  name: kube-etcd
+  namespace: kube-system
 spec:
   hostNetwork: true
   volumes:
-    - name: "certs"
-      hostPath:
-        path: "{{.CertDir}}"
-    - name: "policies"
-      hostPath:
-        path: "/etc/kubernetes/policies"
-    - name: "data"
-      hostPath:
-        path: "/var/lib/etcd"
+  - name: data
+    hostPath:
+      path: /var/lib/etcd
   containers:
-    - name: "etcd"
-      image: "b.gcr.io/kuar/etcd:2.1.1"
-      args:
-        - "--data-dir=/var/lib/etcd"
-        - "--advertise-client-urls=http://127.0.0.1:2379"
-        - "--listen-client-urls=http://127.0.0.1:2379"
-        - "--listen-peer-urls=http://127.0.0.1:2380"
-        - "--name=etcd"
-      volumeMounts:
-        - name: "data"
-          mountPath: "/var/lib/etcd"
-    - name: "controller-manager"
-      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
-      volumeMounts:
-        - name: "certs"
-          mountPath: "{{.CertDir}}"
-          readOnly: true
-      args:
-        - "/hyperkube"
-        - "controller-manager"
-        - "--master=http://127.0.0.1:8080"
-        - "--service-account-private-key-file={{.CertDir}}/apiserver/key.pem"
-        - "--root-ca-file=/var/run/kubernetes/ca.pem"
-        - "--v=2"
-    - name: "apiserver"
-      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
-      volumeMounts:
-        - name: "certs"
-          mountPath: "{{.CertDir}}"
-          readOnly: true
-        - name: "policies"
-          mountPath: "/etc/kubernetes/policies"
-          readOnly: true
-      args:
-        - "/hyperkube"
-        - "apiserver"
-        - "--client-ca-file=/var/run/kubernetes/ca.pem"
-        - "--token-auth-file={{.CertDir}}/tokenfile.txt"
-        - "--allow-privileged=true"
-        - "--service-cluster-ip-range=10.0.0.1/24"
-        - "--admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,SecurityContextDeny,ResourceQuota"
-        - "--insecure-bind-address=0.0.0.0"
-        - "--insecure-port=8080"
-        - "--secure-port=6443"
-        - "--etcd-servers=http://127.0.0.1:2379"
-        - "--tls-cert-file={{.CertDir}}/apiserver/cert.pem"
-        - "--tls-private-key-file={{.CertDir}}/apiserver/key.pem"
-        - "--v=2"
-    - name: "proxy"
-      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
-      securityContext:
-        privileged: true
-      args:
-        - "/hyperkube"
-        - "proxy"
-        - "--master=http://127.0.0.1:8080"
-        - "--v=2"
-    - name: "scheduler"
-      image: "gcr.io/google_containers/hyperkube-amd64:v{{.Version}}"
-      args:
-        - "/hyperkube"
-        - "scheduler"
-        - "--master=http://127.0.0.1:8080"
-        - "--v=2"
+  - name: kube-etcd
+    image: b.gcr.io/kuar/etcd:2.1.1
+    args:
+    - --data-dir=/var/lib/etcd
+    - --advertise-client-urls=http://127.0.0.1:2379
+    - --listen-client-urls=http://127.0.0.1:2379
+    - --listen-peer-urls=http://127.0.0.1:2380
+    - --name=etcd
+    volumeMounts:
+    - name: data
+      mountPath: /var/lib/etcd
 
 `
-	t, err := template.New("k8sConfig").Parse(k8sConfigTmpl)
+}
+
+// GenerateApiserverManifest generates a manifest for the apiserver
+func GenerateApiserverManifest(targetDir string, version string) (string, error) {
+	type ConfigDetails struct {
+		CertDir string
+		Version string
+	}
+
+	details := ConfigDetails{targetDir, version}
+
+	configTmpl := `apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-apiserver
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  volumes:
+  - name: certs
+    hostPath:
+      path: {{.CertDir}}
+  - name: policies
+    hostPath:
+      path: /etc/kubernetes/policies
+  containers:
+  - name: kube-apiserver
+    image: gcr.io/google_containers/hyperkube-amd64:v{{.Version}}
+    volumeMounts:
+    - name: certs
+      mountPath: {{.CertDir}}
+      readOnly: true
+    - name: policies
+      mountPath: /etc/kubernetes/policies
+      readOnly: true
+    args:
+    - /hyperkube
+    - apiserver
+    - --client-ca-file=/var/run/kubernetes/ca.pem
+    - --token-auth-file={{.CertDir}}/tokenfile.txt
+    - --allow-privileged=true
+    - --service-cluster-ip-range=10.0.0.1/24
+    - --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,SecurityContextDeny,ResourceQuota
+    - --insecure-bind-address=0.0.0.0
+    - --insecure-port=8080
+    - --secure-port=6443
+    - --etcd-servers=http://127.0.0.1:2379
+    - --tls-cert-file={{.CertDir}}/apiserver/cert.pem
+    - --tls-private-key-file={{.CertDir}}/apiserver/key.pem
+    - --v=2
+
+`
+	return generateConfig("apiserverConfig", configTmpl, details)
+}
+
+// GenerateControllerManagerManifest generates a manifest for the controller manager
+func GenerateControllerManagerManifest(targetDir string, version string) (string, error) {
+	type ConfigDetails struct {
+		CertDir string
+		Version string
+	}
+
+	details := ConfigDetails{targetDir, version}
+
+	configTmpl := `apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-controller-manager
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  volumes:
+  - name: certs
+    hostPath:
+      path: {{.CertDir}}
+  containers:
+  - name: kube-controller-manager
+    image: gcr.io/google_containers/hyperkube-amd64:v{{.Version}}
+    volumeMounts:
+    - name: certs
+      mountPath: {{.CertDir}}
+      readOnly: true
+    args:
+    - /hyperkube
+    - controller-manager
+    - --master=http://127.0.0.1:8080
+    - --service-account-private-key-file={{.CertDir}}/apiserver/key.pem
+    - --root-ca-file=/var/run/kubernetes/ca.pem
+    - --v=2
+
+`
+	return generateConfig("controllerManagerConfig", configTmpl, details)
+}
+
+// GenerateSchedulerManifest generates a manifest for the scheduler
+func GenerateSchedulerManifest(version string) (string, error) {
+	type ConfigDetails struct {
+		Version string
+	}
+
+	details := ConfigDetails{version}
+
+	configTmpl := `apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-scheduler
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  containers:
+  - name: kube-scheduler
+    image: gcr.io/google_containers/hyperkube-amd64:v{{.Version}}
+    args:
+    - /hyperkube
+    - scheduler
+    - --master=http://127.0.0.1:8080
+    - --v=2
+
+`
+	return generateConfig("schedulerConfig", configTmpl, details)
+}
+
+// GenerateProxyManifest generates a manifest for the proxy
+func GenerateProxyManifest(version string) (string, error) {
+	type ConfigDetails struct {
+		Version string
+	}
+
+	details := ConfigDetails{version}
+
+	configTmpl := `apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-proxy
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  containers:
+  - name: kube-proxy
+    image: gcr.io/google_containers/hyperkube-amd64:v{{.Version}}
+    securityContext:
+      privileged: true
+    args:
+    - /hyperkube
+    - proxy
+    - --master=http://127.0.0.1:8080
+    - --v=2
+
+`
+	return generateConfig("proxyConfig", configTmpl, details)
+}
+
+func generateConfig(tmplName string, tmpl string, details interface{}) (string, error) {
+	var result bytes.Buffer
+	t, err := template.New(tmplName).Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
-
 	err = t.Execute(&result, details)
-
 	return result.String(), err
 }

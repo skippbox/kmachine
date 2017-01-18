@@ -131,6 +131,7 @@ $ export AWS_ACCESS_KEY_ID=<your access key>
 $ export AWS_SECRET_ACCESS_KEY=<your secret key>
 $ export AWS_VPC_ID=<a vpc id>
 $ kmachine create -d amazonec2 aws
+$ kmachine deploy aws dns  // OPTIONAL: pods cannot resolve any name otherwise
 ```
 
 Configure your Docker client and kubernetes client.

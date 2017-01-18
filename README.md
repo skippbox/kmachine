@@ -221,14 +221,14 @@ Deploy Addons
 You can deploy the DNS and Dashboard Add-ons with:
 
 ```
-$ kmachine deploy dns <machine_name>
-$ kmachine deploy dashboard <machine_name>
+$ kmachine deploy <machine_name> dns
+$ kmachine deploy <machine_name> dashboard
 ```
 
 In addition you can deploy [Helm](https://github.com/kubernetes/helm)
 
 ```
-$ kmachine deploy helm <machine_name>
+$ kmachine deploy <machine_name> helm
 ```
 
 Documentation

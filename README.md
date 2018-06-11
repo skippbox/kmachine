@@ -1,6 +1,8 @@
 Kubernetes Machine (`kmachine`)
 ===============================
 
+*THIS PROJECT IS DEPRECATED, USE MINIKUBE OR DOCKER FOR DESKTOP INSTEAD*
+
 [![Build Status](https://travis-ci.org/skippbox/kmachine.svg?branch=kmachine)](https://travis-ci.org/skippbox/kmachine)
 
 `kmachine` lets you create Docker hosts on your computer, on cloud providers, and
